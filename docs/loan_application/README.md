@@ -3,7 +3,7 @@
   <i>BI Executive Dashboard for Threat Detection, Severity Scoring & Incident Response Intelligence</i>
 </p>
 <p align="center">
-  <img src="images/vulnerability_scorecard_3D.png" alt="Vulnerability Scorecard" width="800" height="400">
+  <img src="https://github.com/eippone/eippone-docs/blob/main/images/EIPPONE_Loan_Application.png" alt="Vulnerability Scorecard" width="800" height="400">
 </p
 
 
