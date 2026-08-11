@@ -1,7 +1,3 @@
-<h1 align="center">Cyber Attack Insight Dashboard & Vulnerability Scorecard</h1>
-<p align="center">
-  <i>BI Executive Dashboard for Threat Detection, Severity Scoring & Incident Response Intelligence</i>
-</p>
 <p align="center">
   <img src="https://github.com/eippone/eippone-docs/blob/main/images/EIPPONE_Loan_Application.png" alt="Vulnerability Scorecard" width="800" height="400">
 </p
