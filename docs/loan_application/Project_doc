@@ -1,0 +1,1337 @@
+Yes. Given the **full scope you have now defined**, I would revise my earlier recommendation.
+
+You are no longer just adding a chatbot to an MVP. You are building an **AI-enabled lending platform** with operational processing, document intelligence, authenticated experiences, governed analytics, and conversational AI. In that situation, adding a proper **Fabric analytical layer now** is a good architectural decision.
+
+The key is **not to replace Dataverse with the warehouse**. Instead, keep Dataverse as the operational system and make Fabric the analytical/AI data platform.
+
+## 1. Your target architecture
+
+I would now recommend this:
+
+```text
+                         EIPPONE LOAN PLATFORM
+                                  |
+              +-------------------+-------------------+
+              |                   |                   |
+              v                   v                   v
+        CUSTOMER CHANNEL     EMPLOYEE CHANNEL    EXECUTIVE CHANNEL
+              |                   |                   |
+        Power Pages          Model-Driven App     Power BI
+              |                   |                   |
+        Customer Agent       Employee Agent      Analytics Agent
+              |                   |                   |
+              +-------------------+-------------------+
+                                  |
+                                  v
+                         MICROSOFT COPILOT STUDIO
+                                  |
+                  +---------------+---------------+
+                  |               |               |
+                  v               v               v
+             DATAVERSE       AI BUILDER       POWER BI/FABRIC
+             Operational      Documents        Analytical
+                OLTP           AI Layer           OLAP
+                  |               |               |
+                  |               v               |
+                  |        AI Extraction          |
+                  |        AI Summary             |
+                  |        AI Findings            |
+                  |               |               |
+                  +---------------+---------------+
+                                  |
+                                  v
+                         FABRIC DATA PLATFORM
+                                  |
+                 +----------------+----------------+
+                 |                                 |
+                 v                                 v
+             LAKEHOUSE                         WAREHOUSE
+                 |                                 |
+                 +----------------+----------------+
+                                  |
+                                  v
+                         STAR SCHEMA / SEMANTIC
+                              MODEL
+                                  |
+                                  v
+                              POWER BI
+                                  |
+                                  v
+                       EXECUTIVE / ANALYTICAL AI
+```
+
+And authentication sits across the customer and employee experiences:
+
+```text
+Customer
+   |
+   v
+Microsoft Entra External ID / Power Pages Authentication
+   |
+   v
+Customer's authorized Dataverse records
+
+
+Employee / Approver
+   |
+   v
+Microsoft Entra ID
+   |
+   v
+Model-Driven App / Power BI
+   |
+   v
+Authorized organizational data
+```
+
+So yes: **I think implementing Fabric now is reasonable for your project.**
+
+---
+
+# 2. But there is one critical distinction
+
+You asked:
+
+> How will we convert the current Loan Application Dataverse table into the warehouse/OLAP?
+
+I would **not convert it in place**.
+
+Instead:
+
+```text
+              CURRENT
+             DATAVERSE
+                 |
+                 | Data movement
+                 v
+              FABRIC
+                 |
+        +--------+--------+
+        |                 |
+        v                 v
+    Lakehouse          Warehouse
+                          |
+                          v
+                    Star Schema
+                          |
+                          v
+                    Power BI Model
+```
+
+So you will have:
+
+### Dataverse
+
+Your **system of record / OLTP**.
+
+### Fabric
+
+Your **analytical platform / OLAP**.
+
+They serve different purposes.
+
+---
+
+# 3. Do we keep both?
+
+## Yes — absolutely.
+
+This is the architecture I recommend.
+
+You will have:
+
+```text
+DATAVERSE
+=========
+Operational truth
+```
+
+and:
+
+```text
+FABRIC
+======
+Analytical truth
+```
+
+More precisely:
+
+### Dataverse contains the current operational state.
+
+For example:
+
+```text
+APP-1002
+
+Customer:
+John Smith
+
+Loan:
+$175,000
+
+Status:
+Under Review
+
+Reviewer:
+Jane Smith
+```
+
+### Fabric contains analytical history.
+
+For example:
+
+```text
+Application
+Date        Status          Amount
+---------------------------------------
+2026-01-05  Submitted       120,000
+2026-01-06  Under Review   120,000
+2026-01-09  Approved       120,000
+```
+
+This becomes extremely important when you want to answer:
+
+> How long did applications spend in each status?
+
+or:
+
+> How has processing time changed over the last six months?
+
+The operational table alone isn't necessarily the best structure for those questions.
+
+---
+
+# 4. Don't make the Fabric warehouse a copy of the Loan Application table
+
+This is the biggest architectural point.
+
+You currently have something like:
+
+```text
+Loan Application
+-----------------------------
+Application ID
+Customer Name
+Address
+Loan Amount
+Loan Term
+Interest Rate
+Income
+Status
+Reviewer
+Submission Date
+...
+```
+
+Instead, Fabric should transform this into a dimensional model.
+
+For example:
+
+```text
+                    DIM_CUSTOMER
+                         |
+                         |
+                         v
+DIM_DATE ------ FACT_LOAN_APPLICATION ------ DIM_LOAN
+                         |
+                         |
+                    DIM_STATUS
+                         |
+                         |
+                    DIM_REVIEWER
+```
+
+---
+
+# 5. Your Fact Loan Application
+
+In Fabric:
+
+```text
+FACT_LOAN_APPLICATION
+```
+
+might contain:
+
+| Column            | Example  |
+| ----------------- | -------- |
+| ApplicationKey    | 1002     |
+| ApplicationID     | APP-1002 |
+| CustomerKey       | 501      |
+| LoanProductKey    | 3        |
+| StatusKey         | 2        |
+| SubmissionDateKey | 20260811 |
+| DecisionDateKey   | NULL     |
+| LoanAmount        | 175000   |
+| LoanTerm          | 60       |
+| InterestRate      | 6.5      |
+| AnnualIncome      | 92000    |
+| ProcessingDays    | NULL     |
+| HighValueFlag     | 1        |
+| ApprovedFlag      | 0        |
+| RejectedFlag      | 0        |
+
+Notice something important:
+
+**Customer Name isn't necessarily stored repeatedly in the fact table.**
+
+You get it through:
+
+```text
+CustomerKey
+      |
+      v
+DIM_CUSTOMER
+```
+
+---
+
+# 6. DIM_CUSTOMER
+
+```text
+DIM_CUSTOMER
+------------
+CustomerKey
+CustomerID
+CustomerName
+Province
+EmploymentType
+IncomeRange
+CustomerSegment
+```
+
+---
+
+# 7. DIM_LOAN
+
+```text
+DIM_LOAN
+--------
+LoanProductKey
+LoanType
+LoanProduct
+Description
+MinAmount
+MaxAmount
+```
+
+---
+
+# 8. DIM_STATUS
+
+```text
+DIM_APPLICATION_STATUS
+----------------------
+StatusKey
+StatusCode
+StatusName
+StatusCategory
+```
+
+For example:
+
+```text
+1 = Submitted
+2 = Under Review
+3 = Approved
+4 = Rejected
+5 = More Information Required
+```
+
+---
+
+# 9. DIM_DATE
+
+This is extremely important for Power BI.
+
+```text
+DIM_DATE
+--------
+DateKey
+Date
+Day
+Month
+MonthName
+Quarter
+Year
+FiscalYear
+Week
+```
+
+Then Power BI can easily answer:
+
+> How many applications were submitted each month?
+
+or:
+
+> How did approval rates change by quarter?
+
+---
+
+# 10. But your AI requirements introduce more fact tables
+
+This is where your project becomes much more interesting.
+
+I would **not create only `FACT_LOAN_APPLICATION`**.
+
+I would create several facts.
+
+## Fact 1 — Loan Application
+
+```text
+FACT_LOAN_APPLICATION
+```
+
+One row per application.
+
+---
+
+## Fact 2 — Application Status History
+
+```text
+FACT_APPLICATION_STATUS
+```
+
+One row every time an application's status changes.
+
+For example:
+
+```text
+APP-1002
+Submitted
+2026-08-01
+
+APP-1002
+Under Review
+2026-08-02
+
+APP-1002
+More Information Required
+2026-08-04
+
+APP-1002
+Under Review
+2026-08-06
+
+APP-1002
+Approved
+2026-08-09
+```
+
+This enables:
+
+> How long does an application stay under review?
+
+That is much better than simply storing the current status.
+
+---
+
+# 11. Fact 3 — Document Processing
+
+For your AI Builder implementation:
+
+```text
+FACT_DOCUMENT_PROCESSING
+```
+
+One row per document processed.
+
+Example:
+
+```text
+Application   Document       Confidence
+-----------------------------------------
+APP-1002      ID             98%
+APP-1002      Income         74%
+APP-1002      Tax Return     91%
+APP-1002      Application    96%
+```
+
+Now you can create an executive KPI:
+
+> **Average AI document extraction confidence = 89.7%**
+
+---
+
+# 12. Fact 4 — AI Review
+
+For your AI application summary:
+
+```text
+FACT_AI_REVIEW
+```
+
+Example:
+
+| Application | Confidence | Findings | Recommendation         | Human Override |
+| ----------- | ---------: | -------: | ---------------------- | -------------- |
+| APP-1002    |        89% |        1 | Review                 | Yes            |
+| APP-1003    |        95% |        0 | Documentation Complete | No             |
+
+This allows you to analyze the AI system itself.
+
+For example:
+
+> How often do reviewers override AI recommendations?
+
+That is an excellent governance metric.
+
+---
+
+# 13. Fact 5 — Approval
+
+You already have Power Automate approval.
+
+Create:
+
+```text
+FACT_APPROVAL
+```
+
+Example:
+
+```text
+Application
+Reviewer
+Submission Date
+Decision Date
+Decision
+Approval Duration
+```
+
+Then you can calculate:
+
+```text
+Average approval time
+Approval rate
+Rejection rate
+Approval rate by reviewer
+Approval rate by loan type
+```
+
+---
+
+# 14. Your complete Fabric model
+
+I would therefore target:
+
+```text
+                         DIM_DATE
+                            |
+                            |
+                   +--------+--------+
+                   |                 |
+                   v                 v
+           FACT_LOAN_APPLICATION   FACT_APPROVAL
+                   |
+                   |
+                   v
+             DIM_CUSTOMER
+                   |
+                   |
+                   v
+              DIM_LOAN
+                   |
+                   |
+                   v
+              DIM_STATUS
+
+
+             FACT_DOCUMENT_PROCESSING
+                       |
+                       +---- DIM_DOCUMENT
+                       |
+                       +---- DIM_DATE
+                       |
+                       +---- DIM_APPLICATION
+
+
+                  FACT_AI_REVIEW
+                       |
+                       +---- DIM_APPLICATION
+                       +---- DIM_AI_MODEL
+                       +---- DIM_DATE
+
+
+              FACT_APPLICATION_STATUS
+                       |
+                       +---- DIM_STATUS
+                       +---- DIM_DATE
+                       +---- DIM_APPLICATION
+```
+
+This is much more powerful than simply copying your Dataverse table.
+
+---
+
+# 15. How do we actually move the Dataverse data into Fabric?
+
+This is the next implementation step.
+
+Conceptually:
+
+```text
+Dataverse
+    |
+    v
+Fabric ingestion
+    |
+    v
+Bronze/raw data
+    |
+    v
+Transformation
+    |
+    v
+Silver/curated data
+    |
+    v
+Gold/star schema
+    |
+    v
+Power BI semantic model
+```
+
+If you are using Microsoft Fabric, you can use Fabric's Data Factory capabilities, pipelines, Dataflows Gen2, shortcuts, notebooks, or other ingestion patterns depending on your environment and scale.
+
+For your project, I would start simple rather than build an unnecessarily complicated medallion architecture.
+
+---
+
+# 16. I would use three conceptual layers
+
+### Layer 1 — Raw
+
+```text
+Dataverse
+     |
+     v
+Fabric Raw
+```
+
+Keep the source data close to its original form.
+
+---
+
+### Layer 2 — Curated
+
+Clean:
+
+```text
+Names
+Dates
+Statuses
+Data types
+Duplicates
+Missing values
+```
+
+---
+
+### Layer 3 — Analytical
+
+Create:
+
+```text
+FACT_LOAN_APPLICATION
+FACT_APPROVAL
+FACT_DOCUMENT_PROCESSING
+FACT_AI_REVIEW
+FACT_APPLICATION_STATUS
+
+DIM_CUSTOMER
+DIM_DATE
+DIM_LOAN
+DIM_STATUS
+DIM_DOCUMENT
+DIM_REVIEWER
+```
+
+Then:
+
+```text
+                 GOLD
+                  |
+                  v
+             Power BI
+```
+
+---
+
+# 17. What happens when a customer submits an application?
+
+This is very important for question #4.
+
+You asked:
+
+> Can the customer application intake form record the data directly in the warehouse/OLAP?
+
+### Technically: you could build something that writes there.
+
+### Architecturally: **I strongly recommend NO.**
+
+Your customer should submit to:
+
+```text
+Power Pages
+    |
+    v
+Dataverse
+```
+
+not:
+
+```text
+Power Pages
+    |
+    v
+Fabric Warehouse
+```
+
+Why?
+
+Because the application is an **operational transaction**.
+
+You need:
+
+* transaction integrity
+* immediate validation
+* record-level security
+* relationships
+* workflow triggers
+* Power Automate
+* Power Apps
+* Power Pages
+* approvals
+* document relationships
+
+Dataverse is designed for that operational workload.
+
+---
+
+# 18. The correct flow
+
+The customer experience should be:
+
+```text
+Customer
+   |
+   v
+Power Pages
+   |
+   v
+Authenticated
+   |
+   v
+Dataverse
+   |
+   +----------------------+
+   |                      |
+   v                      v
+Power Automate          AI Builder
+   |                      |
+   |                      v
+   |                 AI Results
+   |                      |
+   +----------+-----------+
+              |
+              v
+           Dataverse
+              |
+              v
+        Fabric ingestion
+              |
+              v
+        Fabric Warehouse
+              |
+              v
+        Power BI Semantic
+             Model
+```
+
+That gives you the best of both worlds.
+
+---
+
+# 19. What about real-time data?
+
+You might be thinking:
+
+> "But if Fabric receives the data later, how can my AI agent answer questions about the latest application?"
+
+This is why we shouldn't force every use case through the warehouse.
+
+Use the appropriate source for the question.
+
+### Customer application status
+
+Use:
+
+```text
+Copilot
+   ↓
+Dataverse
+```
+
+because it needs current transactional information.
+
+### Employee application review
+
+Use:
+
+```text
+Employee Copilot
+       ↓
+Dataverse
+       ↓
+Application + Documents + AI Results
+```
+
+because the reviewer needs the current application.
+
+### Executive KPI
+
+Use:
+
+```text
+Executive Copilot
+       ↓
+Power BI Semantic Model
+       ↓
+Fabric
+```
+
+because the executive needs governed analytics.
+
+---
+
+# 20. And the AI application summary?
+
+This is another area where **Dataverse should remain central**.
+
+Suppose APP-1002 has:
+
+```text
+Application Form
++
+ID
++
+Income Statement
++
+Tax Return
++
+Bank Statement
+```
+
+The pipeline should be:
+
+```text
+                  APP-1002
+                     |
+          +----------+----------+
+          |          |          |
+          v          v          v
+      Form PDF      ID      Income Doc
+          |          |          |
+          +----------+----------+
+                     |
+                     v
+                 AI Builder
+                     |
+                     v
+              Extracted Data
+                     |
+                     v
+             Validation Layer
+                     |
+                     v
+               AI Summary
+                     |
+                     v
+                 Dataverse
+                     |
+                     v
+             Employee Review App
+```
+
+The reviewer gets the summary **from Dataverse**, not from the warehouse.
+
+Then the analytical representation of that AI processing goes into Fabric:
+
+```text
+Dataverse
+     |
+     v
+FACT_AI_REVIEW
+     |
+     v
+Power BI
+```
+
+---
+
+# 21. This gives you a very clean separation
+
+## Operational AI
+
+```text
+Copilot
+  |
+  v
+Dataverse
+  |
+  +-- Application
+  +-- Documents
+  +-- AI Extraction
+  +-- AI Findings
+  +-- AI Summary
+```
+
+## Analytical AI
+
+```text
+Copilot
+  |
+  v
+Power BI Semantic Model
+  |
+  v
+Fabric
+  |
+  +-- Application trends
+  +-- Approval trends
+  +-- Processing times
+  +-- High-value loans
+  +-- AI quality
+  +-- Document quality
+```
+
+---
+
+# 22. Authentication should also be separated
+
+You are correct that authentication is an important part of the architecture.
+
+### Customer
+
+```text
+Customer
+   ↓
+Power Pages authentication
+   ↓
+Customer identity
+   ↓
+Dataverse permissions
+   ↓
+Own application
+```
+
+### Employee
+
+```text
+Employee
+   ↓
+Microsoft Entra ID
+   ↓
+Power Apps / Model-Driven App
+   ↓
+Dataverse security roles
+   ↓
+Authorized applications
+```
+
+### Power BI
+
+```text
+Employee
+   ↓
+Microsoft Entra ID
+   ↓
+Power BI
+   ↓
+Workspace permissions
+   ↓
+Semantic model
+   ↓
+RLS where required
+```
+
+The conversational agent should **not become a security bypass**.
+
+---
+
+# 23. Customer AI security
+
+For example, customer John asks:
+
+> What is my application status?
+
+The agent should identify John through the authenticated session.
+
+Then:
+
+```text
+Authenticated Customer
+        |
+        v
+Customer ID
+        |
+        v
+Dataverse
+        |
+        v
+Applications owned by Customer
+```
+
+It should **not** do:
+
+```text
+"What application number did the customer type?"
+                     |
+                     v
+              Search Dataverse
+```
+
+because a malicious customer could potentially type someone else's application number.
+
+---
+
+# 24. Employee AI security
+
+Similarly:
+
+```text
+Employee
+   |
+   v
+Employee Copilot
+   |
+   v
+Authorized tool
+   |
+   v
+Dataverse / Power BI
+```
+
+The tool should enforce authorization.
+
+For example:
+
+> "Show me all applications over $150,000."
+
+The underlying tool determines which applications the employee is authorized to see.
+
+---
+
+# 25. Your Power BI reports should use the Fabric model
+
+This is another change I recommend.
+
+Instead of:
+
+```text
+Power BI
+   |
+   v
+Direct Dataverse connection
+```
+
+your final architecture should become:
+
+```text
+Power BI
+   |
+   v
+Power BI Semantic Model
+   |
+   v
+Fabric Warehouse
+   |
+   v
+Dataverse
+```
+
+This will give you a much stronger foundation for your **conversational analytics** and executive AI.
+
+---
+
+# 26. Your current Power BI dashboard doesn't need to disappear
+
+You can migrate it.
+
+Currently:
+
+```text
+Dataverse
+    ↓
+Power BI
+    ↓
+Executive_Loan_Dashboard
+```
+
+Eventually:
+
+```text
+Dataverse
+    ↓
+Fabric
+    ↓
+Star Schema
+    ↓
+Power BI Semantic Model
+    ↓
+Executive_Loan_Dashboard
+```
+
+Your existing visualizations can then be repointed/rebuilt against the new semantic model.
+
+---
+
+# 27. What I would NOT do
+
+I would avoid this architecture:
+
+```text
+Customer
+   |
+   v
+Power Pages
+   |
+   v
+Fabric Warehouse
+   |
+   +-- Power BI
+   +-- Copilot
+```
+
+It makes your analytical system responsible for operational transactions.
+
+That's mixing OLTP and OLAP responsibilities.
+
+---
+
+# 28. What I WOULD do
+
+Your final EIPPONE architecture becomes:
+
+```text
+                         USERS
+                           |
+          +----------------+----------------+
+          |                |                |
+       CUSTOMER         EMPLOYEE        EXECUTIVE
+          |                |                |
+          v                v                v
+    Power Pages       Power Apps        Power BI
+          |                |                |
+          v                v                |
+     Customer AI       Employee AI          |
+          |                |                |
+          +--------+-------+----------------+
+                   |
+                   v
+              COPILOT STUDIO
+                   |
+          +--------+--------+
+          |                 |
+          v                 v
+      DATAVERSE          POWER BI
+       / OLTP             / OLAP
+          |                 |
+          |                 v
+          |              FABRIC
+          |                 |
+          |          +------+------+
+          |          |             |
+          |          v             v
+          |      Lakehouse      Warehouse
+          |                        |
+          |                        v
+          |                  Star Schema
+          |                        |
+          |                        v
+          |                 Semantic Model
+          |                        |
+          +------------------------+
+                                   |
+                                   v
+                            ANALYTICAL AI
+                                   |
+                         +---------+---------+
+                         |                   |
+                    Report Insights    Conversation
+```
+
+---
+
+# 29. So, answering your four questions directly
+
+### **1. Should you implement Fabric/Power BI OLAP now?**
+
+**Yes.**
+
+Given that you're now implementing:
+
+* AI Builder
+* customer conversational AI
+* employee/approver conversational AI
+* application summarization
+* document intelligence
+* executive AI insights
+* conversational Power BI
+* authenticated customer access
+* authenticated employee access
+* governed reporting
+
+I think **now is the right time to establish the Fabric analytical architecture**.
+
+You don't need to wait until the application has thousands of records.
+
+The important benefit is getting the **architecture right before the AI layer becomes deeply dependent on the existing Power BI → Dataverse structure**.
+
+---
+
+### **2. How do we convert the current Dataverse table?**
+
+**Don't convert it.**
+
+Instead:
+
+```text
+Current Dataverse Loan Application
+              |
+              v
+       Fabric ingestion
+              |
+              v
+        Raw / staging
+              |
+              v
+        Transformation
+              |
+              v
+       Star Schema
+```
+
+Your current table becomes the **source**, not the warehouse.
+
+---
+
+### **3. Do we keep both?**
+
+**Yes.**
+
+You should have:
+
+```text
+Dataverse
+= Operational System of Record
+```
+
+and:
+
+```text
+Fabric Warehouse
+= Analytical System
+```
+
+Then:
+
+```text
+Power Apps / Power Pages / AI Builder / transactional Copilot
+                         ↓
+                     Dataverse
+
+Power BI / Executive AI / Analytical Copilot
+                         ↓
+                  Fabric / Semantic Model
+```
+
+---
+
+### **4. Can the customer intake form write directly to the warehouse?**
+
+**Technically possible in some architectures, but I would not do it.**
+
+Your customer intake form should write to:
+
+```text
+Power Pages
+      ↓
+Dataverse
+```
+
+Then:
+
+```text
+Dataverse
+      ↓
+Fabric
+      ↓
+Warehouse
+      ↓
+Power BI
+```
+
+That is the architecture I would defend in an enterprise architecture review.
+
+---
+
+# 30. And this changes how I would approach your next implementation step
+
+I would **pause before building the Copilots** and first establish the **data foundation**.
+
+Specifically, I would do these things in this order:
+
+```text
+STEP 1
+Current Dataverse model
+        ↓
+STEP 2
+Redesign operational Dataverse relationships
+        ↓
+STEP 3
+Create Fabric workspace
+        ↓
+STEP 4
+Connect Dataverse → Fabric
+        ↓
+STEP 5
+Create raw/staging layer
+        ↓
+STEP 6
+Create analytical star schema
+        ↓
+STEP 7
+Create Power BI semantic model
+        ↓
+STEP 8
+Migrate Executive_Loan_Dashboard
+        ↓
+STEP 9
+Implement AI Builder document processing
+        ↓
+STEP 10
+Implement application AI summary
+        ↓
+STEP 11
+Implement authenticated Customer Copilot
+        ↓
+STEP 12
+Implement authenticated Employee Copilot
+        ↓
+STEP 13
+Implement Analytical/Executive Copilot
+        ↓
+STEP 14
+Implement automated executive insights
+        ↓
+STEP 15
+Implement end-to-end security testing
+```
+
+**That is the architecture I would use for your Loan Application Digitalization Platform now.**
+
+And importantly, your existing **50-record Dataverse `Loan Application` table does not need to be thrown away or rebuilt from scratch**. We can use those 50 records as the initial source data and build the Fabric model around them. Then every new application submitted through Power Pages will continue entering Dataverse first and subsequently flow into Fabric for analytics.
+
+The next concrete task should therefore be to take **your actual current `Loan Application` Dataverse columns** and design the exact **Dataverse operational model → Fabric staging → Fact/Dimension tables → Power BI semantic model**. That will give us a precise blueprint before we touch AI Builder or Copilot Studio.
