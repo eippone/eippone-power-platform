@@ -1335,3 +1335,1338 @@ Implement end-to-end security testing
 And importantly, your existing **50-record Dataverse `Loan Application` table does not need to be thrown away or rebuilt from scratch**. We can use those 50 records as the initial source data and build the Fabric model around them. Then every new application submitted through Power Pages will continue entering Dataverse first and subsequently flow into Fabric for analytics.
 
 The next concrete task should therefore be to take **your actual current `Loan Application` Dataverse columns** and design the exact **Dataverse operational model → Fabric staging → Fact/Dimension tables → Power BI semantic model**. That will give us a precise blueprint before we touch AI Builder or Copilot Studio.
+
+
+Yes. Let's implement **Step 2 properly before touching Fabric**.
+
+Because your current MVP was built around a single **Loan Application** Dataverse table, I recommend we refactor the operational model rather than trying to make that one table serve customers, documents, reviews, approvals, AI processing, and analytics simultaneously.
+
+The target is:
+
+```text
+                         DATAVERSE — OPERATIONAL MODEL
+                                      |
+          +---------------------------+---------------------------+
+          |                           |                           |
+          v                           v                           v
+      CUSTOMER                 LOAN APPLICATION              DOCUMENTS
+          |                           |                           |
+          |                           |                           |
+          +---------------------------+---------------------------+
+                                      |
+                         +------------+------------+
+                         |            |            |
+                         v            v            v
+                     REVIEWS      APPROVALS    STATUS HISTORY
+                         |
+                         v
+                    AI PROCESSING
+                         |
+          +--------------+--------------+
+          |              |              |
+          v              v              v
+      EXTRACTION     VALIDATION     RECOMMENDATION
+```
+
+The important thing is that **Dataverse remains operational**. Fabric will later consume this clean structure.
+
+---
+
+# Step 2 — Redesign the Operational Dataverse Model
+
+## 1. The target Dataverse tables
+
+I recommend creating the following tables:
+
+### Core operational tables
+
+```text
+1. Customer
+2. Loan Application
+3. Loan Document
+4. Application Review
+5. Approval
+6. Application Status History
+```
+
+### AI tables
+
+```text
+7. AI Extraction Result
+8. AI Validation Finding
+9. AI Recommendation
+10. AI Processing Log
+```
+
+### Configuration
+
+```text
+11. AI Configuration
+```
+
+You don't need to build all 11 before continuing. We should build the **six core operational tables first**, then the AI tables.
+
+---
+
+# 2. Most important change: separate Customer from Loan Application
+
+Your current table likely contains customer information alongside application information.
+
+Conceptually, you may currently have:
+
+```text
+Loan Application
+-------------------------
+Application ID
+Customer Name
+Address
+Phone
+Email
+Loan Amount
+Loan Term
+Interest Rate
+Income
+Employment
+Status
+Reviewer
+...
+```
+
+We want to change this to:
+
+```text
+CUSTOMER
+----------------
+Customer ID
+First Name
+Last Name
+Email
+Phone
+Address
+City
+Province
+Postal Code
+Employment
+Annual Income
+```
+
+and:
+
+```text
+LOAN APPLICATION
+-------------------------
+Application ID
+Customer
+Loan Amount
+Loan Term
+Interest Rate
+Status
+Submission Date
+...
+```
+
+The relationship becomes:
+
+```text
+Customer
+   1
+   |
+   | has
+   |
+   *
+Loan Application
+```
+
+This means one customer can eventually have multiple loan applications.
+
+That is important for your future conversational AI.
+
+For example:
+
+> "Show me my previous loan applications."
+
+The system can retrieve all applications associated with the authenticated customer.
+
+---
+
+# 3. Before changing anything — make a backup
+
+Since your existing Canvas App, Model-Driven App and Power Automate flow already depend on the current table, **do not delete or rename columns yet**.
+
+First:
+
+**Power Apps → Solutions**
+
+Open your existing solution or create:
+
+```text
+EIPPONE Loan Platform
+```
+
+Add:
+
+```text
+Loan Application
+```
+
+and all dependent components.
+
+Also export an unmanaged solution as a backup if this is your development environment.
+
+---
+
+# 4. Create the Customer table
+
+Go to:
+
+**Power Apps → Tables → New table**
+
+Create:
+
+```text
+Display name:
+Customer
+
+Plural:
+Customers
+
+Primary column:
+Customer Name
+```
+
+For your project, I'd use a **Customer Number** as the business identifier.
+
+Add:
+
+| Column          | Type       |
+| --------------- | ---------- |
+| Customer Number | Autonumber |
+| First Name      | Text       |
+| Last Name       | Text       |
+| Email           | Email      |
+| Phone           | Phone      |
+| Address         | Text       |
+| City            | Text       |
+| Province        | Choice     |
+| Postal Code     | Text       |
+| Employment Type | Choice     |
+| Annual Income   | Currency   |
+
+### Important
+
+Do not make `Customer Number` the same thing as the Dataverse GUID.
+
+Dataverse will automatically generate its internal unique identifier.
+
+You want something human-readable such as:
+
+```text
+CUS-00001
+CUS-00002
+CUS-00003
+```
+
+Your Dataverse GUID remains the technical key.
+
+---
+
+# 5. Modify Loan Application
+
+Open your existing:
+
+**Loan Application**
+
+Do **not** delete the existing customer fields yet.
+
+First add a new lookup:
+
+```text
+Customer
+```
+
+Relationship:
+
+```text
+Customer 1 : N Loan Application
+```
+
+In the relationship designer, the structure should be:
+
+```text
+Customer
+   |
+   | 1
+   |
+   | N
+   |
+Loan Application
+```
+
+Set the lookup column on `Loan Application`:
+
+```text
+Customer
+```
+
+---
+
+# 6. What should remain in Loan Application?
+
+The Loan Application table should contain **application-specific information**.
+
+For example:
+
+```text
+Loan Application
+-----------------------------
+Application ID
+Customer
+Loan Type
+Loan Amount
+Loan Term
+Interest Rate
+Application Status
+Submission Date
+Decision Date
+High Value Loan
+High Value Threshold
+Assigned Reviewer
+```
+
+Customer information should gradually move to Customer.
+
+So:
+
+### Customer
+
+```text
+Name
+Address
+Phone
+Email
+Employment
+Income
+```
+
+### Application
+
+```text
+Loan Amount
+Loan Term
+Interest Rate
+Status
+Submission Date
+Reviewer
+Decision
+```
+
+---
+
+# 7. What about Annual Income?
+
+This one requires a design decision.
+
+For your lending platform, I recommend **keeping current customer profile income in Customer**, but also storing the **income declared for a particular application** in Loan Application.
+
+Why?
+
+Suppose:
+
+```text
+Customer income today:
+$90,000
+```
+
+but when they submitted Application A:
+
+```text
+Declared income:
+$82,000
+```
+
+and later Application B:
+
+```text
+Declared income:
+$95,000
+```
+
+You don't want changing the Customer record to overwrite historical application information.
+
+Therefore:
+
+### Customer
+
+```text
+Current Annual Income
+```
+
+### Loan Application
+
+```text
+Declared Annual Income
+```
+
+That is an important historical distinction.
+
+---
+
+# 8. Create Loan Type
+
+If your current Loan Application table has something like:
+
+```text
+Loan Type
+```
+
+I recommend creating a separate table:
+
+```text
+Loan Type
+```
+
+Example:
+
+| Loan Type ID | Loan Type     |
+| ------------ | ------------- |
+| LT001        | Personal Loan |
+| LT002        | Business Loan |
+| LT003        | Mortgage      |
+| LT004        | Auto Loan     |
+
+Then create:
+
+```text
+Loan Type 1:N Loan Application
+```
+
+Your application contains:
+
+```text
+Loan Type → Lookup
+```
+
+instead of free text.
+
+This will later become:
+
+```text
+DIM_LOAN_TYPE
+```
+
+in Fabric.
+
+---
+
+# 9. Create Application Status as a Choice
+
+For the operational application, I recommend using a **Choice** column:
+
+```text
+Application Status
+```
+
+Values:
+
+```text
+Draft
+Submitted
+Under Review
+More Information Required
+Approved
+Rejected
+Withdrawn
+Completed
+```
+
+However, there is an important distinction:
+
+### Current Status
+
+belongs on:
+
+```text
+Loan Application
+```
+
+### Status History
+
+belongs in a separate table.
+
+---
+
+# 10. Create Application Status History
+
+Create:
+
+```text
+Application Status History
+```
+
+Columns:
+
+| Column            | Type           |
+| ----------------- | -------------- |
+| Status History ID | Autonumber     |
+| Loan Application  | Lookup         |
+| Previous Status   | Choice         |
+| New Status        | Choice         |
+| Status Date       | Date/Time      |
+| Changed By        | User           |
+| Comments          | Multiline Text |
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       | N
+       |
+Application Status History
+```
+
+This is extremely valuable.
+
+Suppose APP-1002 goes:
+
+```text
+Submitted
+    ↓
+Under Review
+    ↓
+More Information Required
+    ↓
+Under Review
+    ↓
+Approved
+```
+
+You preserve every transition.
+
+Later Fabric can calculate:
+
+> Average time spent under review.
+
+---
+
+# 11. Create Loan Document
+
+Now we address your AI Builder requirement.
+
+Create:
+
+```text
+Loan Document
+```
+
+Columns:
+
+| Column               | Type       |
+| -------------------- | ---------- |
+| Document ID          | Autonumber |
+| Loan Application     | Lookup     |
+| Document Type        | Choice     |
+| Document Name        | Text       |
+| Document Status      | Choice     |
+| File                 | File       |
+| Upload Date          | Date/Time  |
+| AI Processing Status | Choice     |
+| AI Confidence        | Decimal    |
+| Review Required      | Yes/No     |
+
+Document Type:
+
+```text
+Application Form
+Identification
+Proof of Income
+Tax Return
+Bank Statement
+Supporting Document
+Other
+```
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       | N
+       |
+Loan Document
+```
+
+This is essential because one application can have many documents.
+
+---
+
+# 12. Your document architecture becomes
+
+```text
+Loan Application
+        |
+        | 1
+        |
+        | N
+        |
+   Loan Document
+        |
+        +---- Application PDF
+        +---- ID
+        +---- Income
+        +---- Tax Return
+        +---- Bank Statement
+```
+
+This is exactly what your AI Builder pipeline needs.
+
+---
+
+# 13. Create Application Review
+
+Now separate the **review activity** from the application itself.
+
+Create:
+
+```text
+Application Review
+```
+
+Columns:
+
+| Column                | Type           |
+| --------------------- | -------------- |
+| Review ID             | Autonumber     |
+| Loan Application      | Lookup         |
+| Reviewer              | User           |
+| Review Status         | Choice         |
+| Review Start Date     | Date/Time      |
+| Review Completed Date | Date/Time      |
+| Reviewer Comments     | Multiline Text |
+| Review Outcome        | Choice         |
+
+Review Status:
+
+```text
+Not Started
+In Progress
+Completed
+Escalated
+```
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       | N
+       |
+Application Review
+```
+
+This gives you flexibility if an application goes through multiple reviews.
+
+---
+
+# 14. Create Approval
+
+Your existing Power Automate approval process should eventually write to:
+
+```text
+Approval
+```
+
+Create:
+
+| Column           | Type           |
+| ---------------- | -------------- |
+| Approval ID      | Autonumber     |
+| Loan Application | Lookup         |
+| Approver         | User           |
+| Approval Status  | Choice         |
+| Submitted Date   | Date/Time      |
+| Decision Date    | Date/Time      |
+| Comments         | Multiline Text |
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       | N
+       |
+Approval
+```
+
+This gives you a proper audit trail.
+
+---
+
+# 15. The core operational model now looks like this
+
+```text
+                         CUSTOMER
+                            |
+                            | 1
+                            |
+                            | N
+                    LOAN APPLICATION
+                     /      |       \
+                    /       |        \
+                   N        N         N
+                  /         |          \
+                 v          v           v
+       LOAN DOCUMENT   APPLICATION    APPROVAL
+                         REVIEW
+                            |
+                            |
+                            v
+                   STATUS HISTORY
+```
+
+More accurately:
+
+```text
+Customer
+   1
+   |
+   N
+Loan Application
+   |
+   +------ N Loan Document
+   |
+   +------ N Application Review
+   |
+   +------ N Approval
+   |
+   +------ N Status History
+```
+
+That is your **operational backbone**.
+
+---
+
+# 16. Now add the AI layer
+
+Once those tables are established, create:
+
+```text
+AI Extraction Result
+```
+
+Relationship:
+
+```text
+Loan Document
+       1
+       |
+       N
+AI Extraction Result
+```
+
+For example:
+
+```text
+Loan Document
+     |
+     v
+AI Extraction Result
+     |
+     +-- Customer Name
+     +-- Address
+     +-- Loan Amount
+     +-- Income
+     +-- Interest Rate
+     +-- Confidence
+```
+
+---
+
+# 17. AI Validation Finding
+
+Create:
+
+```text
+AI Validation Finding
+```
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       N
+AI Validation Finding
+```
+
+Example:
+
+```text
+APP-1002
+
+Finding:
+Income mismatch
+
+Application:
+$90,000
+
+Document:
+$82,000
+
+Severity:
+High
+
+Confidence:
+94%
+```
+
+---
+
+# 18. AI Recommendation
+
+Create:
+
+```text
+AI Recommendation
+```
+
+Relationship:
+
+```text
+Loan Application
+       1
+       |
+       N
+AI Recommendation
+```
+
+I'd actually allow multiple recommendations because AI processing may happen more than once.
+
+For example:
+
+```text
+AI Recommendation #1
+Model Version: v1
+Recommendation: Review Required
+
+AI Recommendation #2
+Model Version: v2
+Recommendation: Documentation Complete
+```
+
+Then you have an auditable AI history.
+
+---
+
+# 19. AI Processing Log
+
+Create:
+
+```text
+AI Processing Log
+```
+
+This will be useful later for governance.
+
+Columns:
+
+```text
+Processing ID
+Application
+Document
+AI Service
+Model Version
+Processing Start
+Processing End
+Status
+Error Message
+Confidence
+```
+
+This gives you the ability to answer:
+
+> Why did this application fail AI processing?
+
+---
+
+# 20. Your final operational Dataverse model
+
+I recommend getting to this:
+
+```text
+                         CUSTOMER
+                            |
+                            | 1:N
+                            v
+                    LOAN APPLICATION
+                     /      |       \
+                    /       |        \
+                  1:N      1:N       1:N
+                  /         |          \
+                 v          v           v
+          LOAN DOCUMENT  REVIEW      APPROVAL
+                 |
+                 | 1:N
+                 v
+        AI EXTRACTION RESULT
+                 |
+                 |
+        +--------+--------+
+        |                 |
+        v                 v
+ AI VALIDATION       AI PROCESSING
+    FINDING               LOG
+
+LOAN APPLICATION
+       |
+       +---- 1:N STATUS HISTORY
+       |
+       +---- 1:N AI VALIDATION FINDING
+       |
+       +---- 1:N AI RECOMMENDATION
+```
+
+---
+
+# 21. One change I recommend for your current model
+
+I would **not create a separate `Fact Loan Application` table in Dataverse**.
+
+That's the analytical model.
+
+Keep Dataverse clean:
+
+```text
+DATAVERSE
+=========
+Customer
+Loan Application
+Loan Document
+Application Review
+Approval
+Status History
+AI Extraction
+AI Validation
+AI Recommendation
+AI Processing
+```
+
+Then Fabric will later transform those into:
+
+```text
+FABRIC
+======
+
+FACT_LOAN_APPLICATION
+FACT_APPLICATION_STATUS
+FACT_APPROVAL
+FACT_DOCUMENT_PROCESSING
+FACT_AI_REVIEW
+
+DIM_CUSTOMER
+DIM_DATE
+DIM_LOAN_TYPE
+DIM_STATUS
+DIM_DOCUMENT
+DIM_REVIEWER
+```
+
+This is the clean separation we want.
+
+---
+
+# 22. Very important: don't break your existing Canvas App yet
+
+Your current Customer Loan Application Canvas App is already connected to the existing `Loan Application` table.
+
+So **don't delete the existing fields immediately**.
+
+Do this in stages.
+
+### Stage A
+
+Add:
+
+```text
+Customer lookup
+Loan Type lookup
+```
+
+and create the new related tables.
+
+### Stage B
+
+Migrate existing customer information into `Customer`.
+
+### Stage C
+
+Update the Canvas App to use:
+
+```text
+Customer
++
+Loan Application
+```
+
+### Stage D
+
+Update your Model-Driven Employee Review App.
+
+### Stage E
+
+Update Power Automate.
+
+### Stage F
+
+Test the complete MVP.
+
+### Stage G
+
+Only then remove obsolete columns.
+
+This prevents your existing application from breaking.
+
+---
+
+# 23. How your Canvas App will change
+
+Currently you probably have something conceptually like:
+
+```text
+Canvas App
+    |
+    v
+Loan Application
+    |
+    +-- Customer Name
+    +-- Address
+    +-- Email
+    +-- Loan Amount
+    +-- Income
+```
+
+Eventually:
+
+```text
+Canvas App
+    |
+    +------------------+
+    |                  |
+    v                  v
+Customer          Loan Application
+    |                  |
+    |                  +-- Loan Amount
+    |                  +-- Loan Term
+    |                  +-- Rate
+    |                  +-- Status
+    |
+    +-- Name
+    +-- Address
+    +-- Email
+```
+
+The application record has:
+
+```text
+Customer = [lookup]
+```
+
+rather than storing the entire customer profile repeatedly.
+
+---
+
+# 24. And Power Pages becomes much cleaner
+
+Your authenticated customer experience becomes:
+
+```text
+Authenticated Customer
+          |
+          v
+       Customer
+          |
+          v
+  Customer's Applications
+          |
+          v
+   Selected Application
+          |
+    +-----+-----+
+    |           |
+    v           v
+ Documents    Status
+    |
+    v
+ AI Processing
+```
+
+This is particularly important for your Customer Copilot.
+
+The agent can effectively follow:
+
+```text
+Authenticated User
+        ↓
+Customer
+        ↓
+Loan Application
+        ↓
+Documents
+        ↓
+AI Summary
+```
+
+rather than trying to identify a customer using an application number supplied in chat.
+
+---
+
+# 25. And the employee experience
+
+Your Model-Driven App becomes:
+
+```text
+EMPLOYEE
+   |
+   v
+LOAN APPLICATION
+   |
+   +---- Customer
+   |
+   +---- Documents
+   |       |
+   |       +---- AI Extraction
+   |       +---- Validation
+   |
+   +---- Reviews
+   |
+   +---- Approvals
+   |
+   +---- Status History
+   |
+   +---- AI Recommendation
+```
+
+This is exactly the structure we need for the **Employee Conversational Assistant**.
+
+---
+
+# 26. One more table I recommend: AI Configuration
+
+Create:
+
+```text
+AI Configuration
+```
+
+For example:
+
+| Setting                     |    Value |
+| --------------------------- | -------: |
+| High Value Threshold        | $150,000 |
+| Low Confidence Threshold    |     0.80 |
+| AI Recommendations Enabled  |      Yes |
+| Document Processing Enabled |      Yes |
+
+Then your Power Automate flow doesn't contain:
+
+```text
+Loan Amount >= 150000
+```
+
+Instead:
+
+```text
+Loan Amount >= AI Configuration[High Value Threshold]
+```
+
+This is much better enterprise design.
+
+---
+
+# 27. Relationship map we should implement
+
+Here is the exact relationship blueprint I would use:
+
+```text
+CUSTOMER
+   |
+   | 1:N
+   v
+LOAN APPLICATION
+   |
+   +--------------------+
+   |                    |
+   | 1:N                | 1:N
+   v                    v
+LOAN DOCUMENT       APPLICATION REVIEW
+   |
+   | 1:N
+   v
+AI EXTRACTION RESULT
+
+
+LOAN APPLICATION
+   |
+   +---- 1:N ---> APPROVAL
+   |
+   +---- 1:N ---> STATUS HISTORY
+   |
+   +---- 1:N ---> AI VALIDATION FINDING
+   |
+   +---- 1:N ---> AI RECOMMENDATION
+   |
+   +---- 1:N ---> AI PROCESSING LOG
+
+
+LOAN TYPE
+   |
+   | 1:N
+   v
+LOAN APPLICATION
+```
+
+---
+
+# 28. What I want you to do first in Power Apps
+
+Don't create all of these at once.
+
+Let's do this incrementally.
+
+### First create these three tables:
+
+```text
+Customer
+Loan Type
+Loan Document
+```
+
+Then create these relationships:
+
+```text
+Customer 1:N Loan Application
+
+Loan Type 1:N Loan Application
+
+Loan Application 1:N Loan Document
+```
+
+After that, we'll create:
+
+```text
+Application Review
+Approval
+Application Status History
+```
+
+Then the AI tables.
+
+That way we can test each layer before moving forward.
+
+---
+
+# 29. Your immediate task
+
+In **make.powerapps.com**:
+
+### A. Open your current solution
+
+Go to:
+
+**Solutions → EIPPONE Loan Platform**
+
+### B. Add the existing
+
+```text
+Loan Application
+```
+
+### C. Create
+
+```text
+Customer
+```
+
+### D. Create
+
+```text
+Loan Type
+```
+
+### E. Create
+
+```text
+Loan Document
+```
+
+### F. Create these relationships
+
+```text
+Customer
+    1
+    |
+    N
+Loan Application
+```
+
+```text
+Loan Type
+    1
+    |
+    N
+Loan Application
+```
+
+```text
+Loan Application
+    1
+    |
+    N
+Loan Document
+```
+
+**Don't delete any existing columns yet.**
+
+---
+
+## One thing I need from you before we do the migration
+
+The exact columns in your existing **Loan Application** table are not present in our previous conversation—they were only described generally. Since we are now modifying your actual Dataverse schema, I don't want to guess and accidentally tell you to move/delete the wrong fields.
+
+**Send me a screenshot of your current `Loan Application` table's Columns page** (or paste the column names and data types).
+
+Then I can give you the **exact field-by-field migration map**, like:
+
+```text
+CURRENT LOAN APPLICATION
+          |
+          +--> KEEP
+          |      Loan Amount
+          |      Loan Term
+          |      Interest Rate
+          |
+          +--> MOVE TO CUSTOMER
+          |      Customer Name
+          |      Address
+          |      Phone
+          |
+          +--> CONVERT TO LOOKUP
+          |      Loan Type
+          |      Reviewer
+          |
+          +--> CONVERT TO CHOICE
+          |      Status
+          |
+          +--> NEW
+                 Customer Lookup
+                 High Value Flag
+                 ...
+```
+
+Then I'll walk you through the **actual Power Apps UI clicks, relationship configuration, cascade behavior, primary/alternate keys, and how to migrate your existing 50 loan records without breaking your Canvas App, Model-Driven App, or Power Automate flow.**
+
