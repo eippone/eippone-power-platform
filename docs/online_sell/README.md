@@ -22,4 +22,19 @@ the dashboard empowers leadership to monitor key performance indicators and acti
 * **Solution:** Developed rigorous DAX-driven categorizations in Sections 4 and 5 to separate high-ticket electronics (anchored by Laptops generating
 * over 53% of category revenue) from routine apparel purchases, while mapping lifetime value disparities that show VIP buyers generating $23.12K
 * and accounting for 38% of total orders to guide precise up-sell and cross-sell retention strategies.
-* 
+
+
+### Data Origination & Generation Specification
+
+* **Business Framework:** Built upon a controlled, business-realistic international online retail simulation spanning January through June 2024 (approx. 180 days) to avoid arbitrary random noise.
+* **Volume Constraints:** Engineered around a deterministic total of 100 orders distributed chronologically across six months, featuring seasonal spikes peaking in Q2 (March–June).
+* **Customer Behavioral Distribution:** Comprises 40 distinct customer profiles (C101–C140) categorized into behavioral purchasing tiers:
+* **VIP Customers:** 4 accounts driving 35 total orders (8–10 purchases each).
+* **Frequent Customers:** 8 accounts driving 34 total orders (4–6 purchases each).
+* **Regular Customers:** 15 accounts driving 30 total orders (2 purchases each).
+* **One-Time Customer:** 1 account (C140) driving 1 order.
+
+
+* **Regional Representation:** Balanced geographic distribution mapping customers evenly across North America, Europe, Asia, and South America.
+* **Product Assortment & Pricing:** Standardized across 10 distinct product categories (P1–P10) ranging from high-value premium assets (e.g., Laptops at $1,200) to lower-cost transaction items (e.g., Jackets at $150).
+* **Quantity & Transaction Spread:** Order quantities follow a realistic frequency model where single-unit purchases account for 52% of rows, scaling up to multi-unit bundle orders that drive high-value revenue thresholds exceeding $500.
