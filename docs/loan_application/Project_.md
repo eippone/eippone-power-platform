@@ -2670,3 +2670,311 @@ CURRENT LOAN APPLICATION
 
 Then I'll walk you through the **actual Power Apps UI clicks, relationship configuration, cascade behavior, primary/alternate keys, and how to migrate your existing 50 loan records without breaking your Canvas App, Model-Driven App, or Power Automate flow.**
 
+If you mean the **AI Extraction Result** table in the redesigned EIPPONE Loan Platform, I recommend structuring it as follows.
+
+### AI Extraction Result
+
+This table stores the **structured data extracted by AI from a Loan Document**—for example, extracting borrower name, income, loan amount, address, employer, etc. from an uploaded PDF.
+
+| Column                        | Data Type              | Purpose                                               |
+| ----------------------------- | ---------------------- | ----------------------------------------------------- |
+| **AI Extraction Result ID**   | Autonumber             | Human-readable business ID, e.g. `EXT-1000`           |
+| **AI Extraction Result GUID** | Unique Identifier      | Dataverse technical primary key                       |
+| **Loan Document**             | Lookup                 | Links the extraction result to the **Loan Document**  |
+| **Extraction Status**         | Choice                 | Pending, Processing, Completed, Failed                |
+| **AI Model**                  | Text                   | Model used for extraction                             |
+| **Extraction Version**        | Text                   | Version of the extraction process/model               |
+| **Extracted Data**            | Multiple Lines of Text | Stores the extracted structured data, preferably JSON |
+| **Confidence Score**          | Decimal Number         | Overall confidence score                              |
+| **Extraction Date**           | Date and Time          | When extraction was performed                         |
+| **Processing Duration**       | Whole Number           | Processing time, e.g. seconds                         |
+| **Error Message**             | Multiple Lines of Text | Error details if extraction failed                    |
+| **Created By**                | User                   | Dataverse system column                               |
+| **Created On**                | Date and Time          | Dataverse system column                               |
+| **Modified By**               | User                   | Dataverse system column                               |
+| **Modified On**               | Date and Time          | Dataverse system column                               |
+
+### Important relationship
+
+The key relationship should be:
+
+**Loan Document (1) → AI Extraction Result (Many)**
+
+A single document may be processed multiple times—for example, if you change the AI model or rerun extraction.
+
+So:
+
+```text
+Loan Application
+      │
+      └── Loan Document
+              │
+              └── AI Extraction Result
+                       │
+                       ├── Extraction Status
+                       ├── AI Model
+                       ├── Extracted Data
+                       ├── Confidence Score
+                       └── Extraction Date
+```
+
+### One important design decision
+
+I would **not create a separate column for every possible extracted field** in this table.
+
+For example, don't initially create:
+
+* Extracted First Name
+* Extracted Last Name
+* Extracted Income
+* Extracted Employer
+* Extracted Address
+* Extracted Loan Amount
+* etc.
+
+Instead, keep the raw/structured AI output in **Extracted Data** and use the downstream AI Validation Finding / AI Recommendation tables to interpret and validate it.
+
+That keeps the AI layer flexible when you add new document types and extracted fields later.
+
+**Recommended primary business relationship:**
+`AI Extraction Result → Loan Document` = **Lookup**.
+
+If you're creating this table now in Dataverse, I can also give you the **exact Column Name, Data Type, Required/Optional, Schema Name, and Choice values** for every column so you can enter them one by one.
+
+Yes. Following the same architecture we established for **AI Extraction Result**, I would structure the remaining four AI tables like this.
+
+## 8. AI Validation Finding
+
+This table stores **individual problems, warnings, or validation results identified by AI** after extraction.
+
+| Column                         | Data Type              | Purpose                                                                        |
+| ------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
+| **AI Validation Finding ID**   | Autonumber             | Business ID, e.g. `VAL-1000`                                                   |
+| **AI Validation Finding GUID** | Unique Identifier      | Dataverse technical primary key                                                |
+| **AI Extraction Result**       | Lookup                 | Links the finding to the AI extraction that produced it                        |
+| **Loan Document**              | Lookup                 | Links directly to the source document                                          |
+| **Finding Type**               | Choice                 | Missing Data, Invalid Data, Inconsistency, Fraud Risk, Policy Violation, Other |
+| **Severity**                   | Choice                 | Low, Medium, High, Critical                                                    |
+| **Finding Status**             | Choice                 | Open, Reviewed, Resolved, Dismissed                                            |
+| **Field Name**                 | Text                   | Extracted field involved, e.g. `AnnualIncome`                                  |
+| **Finding Description**        | Multiple Lines of Text | Explains what AI found                                                         |
+| **Expected Value**             | Multiple Lines of Text | Expected value/rule where applicable                                           |
+| **Actual Value**               | Multiple Lines of Text | Value actually extracted                                                       |
+| **Confidence Score**           | Decimal Number         | AI confidence in the finding                                                   |
+| **Resolution Notes**           | Multiple Lines of Text | Human/reviewer resolution                                                      |
+| **Detected On**                | Date and Time          | When finding was created                                                       |
+| **Resolved On**                | Date and Time          | When resolved                                                                  |
+
+### Relationship
+
+```text
+Loan Document
+      │
+      └── AI Extraction Result
+                 │
+                 └── AI Validation Finding
+                         ├── Missing Data
+                         ├── Invalid Data
+                         ├── Inconsistency
+                         └── Fraud Risk
+```
+
+**Key relationship:**
+`AI Extraction Result (1) → AI Validation Finding (Many)`
+
+---
+
+# 9. AI Recommendation
+
+This table stores the **AI-generated recommendation or assessment for a loan application**.
+
+Unlike Validation Finding, which identifies individual issues, this table represents the **overall AI assessment/recommendation**.
+
+| Column                     | Data Type              | Purpose                                                                  |
+| -------------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| **AI Recommendation ID**   | Autonumber             | Business ID, e.g. `REC-1000`                                             |
+| **AI Recommendation GUID** | Unique Identifier      | Dataverse technical primary key                                          |
+| **Loan Application**       | Lookup                 | Links recommendation to the loan application                             |
+| **AI Extraction Result**   | Lookup                 | Links recommendation to the AI analysis used                             |
+| **Recommendation Type**    | Choice                 | Approval Recommendation, Risk Assessment, Document Recommendation, Other |
+| **Recommendation**         | Choice                 | Approve, Approve with Conditions, Review Required, Reject                |
+| **Risk Level**             | Choice                 | Low, Medium, High, Critical                                              |
+| **Recommendation Summary** | Multiple Lines of Text | Human-readable AI explanation                                            |
+| **Reasoning**              | Multiple Lines of Text | Detailed rationale                                                       |
+| **Confidence Score**       | Decimal Number         | AI confidence                                                            |
+| **Recommendation Status**  | Choice                 | Draft, Active, Accepted, Rejected, Superseded                            |
+| **Reviewer Decision**      | Choice                 | Approve, Reject, Override, Pending                                       |
+| **Reviewer Comments**      | Multiple Lines of Text | Human review comments                                                    |
+| **Generated On**           | Date and Time          | When AI generated recommendation                                         |
+| **Reviewed On**            | Date and Time          | When human reviewed it                                                   |
+
+### Relationship
+
+```text
+Loan Application
+       │
+       └── AI Recommendation
+                │
+                ├── Recommendation
+                ├── Risk Level
+                ├── Confidence Score
+                └── Reviewer Decision
+```
+
+I recommend allowing **multiple recommendations per Loan Application**, because you may eventually run different AI models or generate recommendations at different stages.
+
+**Key relationship:**
+`Loan Application (1) → AI Recommendation (Many)`
+
+---
+
+# 10. AI Processing Log
+
+This is your **technical audit/history table**. It records what the AI system actually did.
+
+For example:
+
+> Document uploaded → OCR → classification → extraction → validation → recommendation.
+
+| Column                     | Data Type              | Purpose                                                     |
+| -------------------------- | ---------------------- | ----------------------------------------------------------- |
+| **AI Processing Log ID**   | Autonumber             | Business ID, e.g. `LOG-1000`                                |
+| **AI Processing Log GUID** | Unique Identifier      | Dataverse technical primary key                             |
+| **Loan Application**       | Lookup                 | Application being processed                                 |
+| **Loan Document**          | Lookup                 | Document being processed                                    |
+| **AI Processing Type**     | Choice                 | OCR, Classification, Extraction, Validation, Recommendation |
+| **Processing Status**      | Choice                 | Started, Completed, Failed                                  |
+| **AI Model**               | Text                   | AI model/service used                                       |
+| **Processing Start**       | Date and Time          | Start time                                                  |
+| **Processing End**         | Date and Time          | End time                                                    |
+| **Processing Duration**    | Whole Number           | Duration in seconds                                         |
+| **Input Reference**        | Multiple Lines of Text | Reference to input/source                                   |
+| **Output Reference**       | Multiple Lines of Text | Reference to generated output                               |
+| **Error Code**             | Text                   | Technical error code                                        |
+| **Error Message**          | Multiple Lines of Text | Technical error details                                     |
+| **Retry Count**            | Whole Number           | Number of retries                                           |
+| **Created On**             | Date and Time          | Dataverse system column                                     |
+
+### Example
+
+```text
+LOG-1001
+Loan Document: DOC-1005
+Processing Type: Extraction
+AI Model: GPT/AI Builder model
+Status: Completed
+Start: 10:15:02
+End: 10:15:14
+Duration: 12 seconds
+```
+
+### Relationships
+
+You can have:
+
+`Loan Application (1) → AI Processing Log (Many)`
+
+and
+
+`Loan Document (1) → AI Processing Log (Many)`
+
+This table is particularly useful for **monitoring, troubleshooting, auditing, and measuring AI performance**.
+
+---
+
+# 11. AI Configuration
+
+This table is different from the other four.
+
+It stores the **rules and settings that control how your AI processing operates**.
+
+| Column                    | Data Type              | Purpose                                                |
+| ------------------------- | ---------------------- | ------------------------------------------------------ |
+| **AI Configuration ID**   | Autonumber             | Business ID, e.g. `CFG-1000`                           |
+| **AI Configuration GUID** | Unique Identifier      | Dataverse technical primary key                        |
+| **Configuration Name**    | Text                   | Primary name, e.g. `Loan Document Extraction`          |
+| **AI Function**           | Choice                 | Extraction, Validation, Recommendation, Classification |
+| **Document Type**         | Choice/Lookup          | Document type to which configuration applies           |
+| **AI Model**              | Text                   | Model/service to use                                   |
+| **Model Version**         | Text                   | Model version                                          |
+| **Confidence Threshold**  | Decimal Number         | Minimum acceptable confidence                          |
+| **Is Active**             | Yes/No                 | Whether configuration is currently active              |
+| **Configuration Version** | Text                   | Version of configuration                               |
+| **Prompt / Instructions** | Multiple Lines of Text | AI instructions/prompt                                 |
+| **Validation Rules**      | Multiple Lines of Text | Rules used for validation                              |
+| **Effective From**        | Date and Time          | Start date                                             |
+| **Effective To**          | Date and Time          | End date                                               |
+| **Notes**                 | Multiple Lines of Text | Administrative notes                                   |
+
+### Example
+
+```text
+Configuration Name:
+Personal Loan Document Extraction
+
+AI Function:
+Extraction
+
+AI Model:
+[Your selected AI model]
+
+Confidence Threshold:
+0.85
+
+Is Active:
+Yes
+
+Configuration Version:
+1.0
+```
+
+---
+
+# How the five AI tables fit together
+
+This is the architecture I recommend for your EIPPONE platform:
+
+```text
+                         LOAN APPLICATION
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+       LOAN DOCUMENT       AI RECOMMENDATION   AI PROCESSING LOG
+              │
+              ▼
+     AI EXTRACTION RESULT
+              │
+              ▼
+     AI VALIDATION FINDING
+              
+              
+              AI CONFIGURATION
+                     │
+                     │ controls
+                     ▼
+        ┌────────────────────────────┐
+        │ AI Processing              │
+        │ • Extraction               │
+        │ • Validation               │
+        │ • Recommendation           │
+        └────────────────────────────┘
+```
+
+### The important distinction
+
+| Table                     | Main purpose                                         |
+| ------------------------- | ---------------------------------------------------- |
+| **AI Extraction Result**  | What AI extracted from the document                  |
+| **AI Validation Finding** | What AI found wrong, missing, inconsistent, or risky |
+| **AI Recommendation**     | What AI recommends about the application             |
+| **AI Processing Log**     | What the AI system did and when                      |
+| **AI Configuration**      | How the AI system is configured to operate           |
+
+This gives you a clean separation between **AI output, AI findings, AI decisions, AI audit trail, and AI configuration**.
+
+One adjustment I would make to the earlier design: **AI Recommendation should be tied primarily to Loan Application**, while **AI Extraction Result and AI Validation Finding should be centered on Loan Document**. That matches the business meaning of each table and will scale much better as you add multiple documents to one loan application.
+
+
+
+
