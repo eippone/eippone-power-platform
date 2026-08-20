@@ -2975,6 +2975,254 @@ This gives you a clean separation between **AI output, AI findings, AI decisions
 
 One adjustment I would make to the earlier design: **AI Recommendation should be tied primarily to Loan Application**, while **AI Extraction Result and AI Validation Finding should be centered on Loan Document**. That matches the business meaning of each table and will scale much better as you add multiple documents to one loan application.
 
+Exactly. **That is an important distinction.** The AI system should produce a **Consolidated AI Output for every completed AI processing cycle**, regardless of whether validation finds problems.
 
+The validation result is an **input to the consolidated output**, not the consolidated output itself.
+
+### Correct AI processing architecture
+
+```text
+                    LOAN APPLICATION
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+       INTAKE FORM DATA           ATTACHED DOCUMENTS
+              │                         │
+              └────────────┬────────────┘
+                           ▼
+                  AI PROCESSING PIPELINE
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+        Extraction    Document       Comparison
+                       Analysis       / Validation
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                 AI VALIDATION FINDINGS
+                    Positive / Negative
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │ CONSOLIDATED AI     │
+                │ OUTPUT              │
+                └─────────────────────┘
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+        Data Summary    Validation      Risk /
+                         Summary       Recommendation
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                    DATAVERSE
+```
+
+## I would therefore add a dedicated table
+
+I would actually **change the original five-table design to six AI tables** by adding:
+
+### **AI Consolidated Output**
+
+This table represents the **final AI assessment of the complete loan application package**.
+
+It is not the same thing as:
+
+* AI Extraction Result
+* AI Validation Finding
+* AI Recommendation
+* AI Processing Log
+
+Those are components of the AI processing pipeline.
+
+---
+
+# AI Consolidated Output
+
+I recommend this structure:
+
+| Column                          | Data Type              | Purpose                                                                        |
+| ------------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| **AI Consolidated Output ID**   | Autonumber             | Business ID, e.g. `AIO-1000`                                                   |
+| **AI Consolidated Output GUID** | Unique Identifier      | Dataverse technical primary key                                                |
+| **Loan Application**            | Lookup                 | Application being analyzed                                                     |
+| **AI Processing Run ID**        | Text / Lookup          | Identifies the AI processing run                                               |
+| **Processing Status**           | Choice                 | Pending, Processing, Completed, Failed                                         |
+| **Overall AI Assessment**       | Choice                 | Positive, Positive with Exceptions, Negative, Inconclusive                     |
+| **Validation Result**           | Choice                 | Passed, Passed with Warnings, Failed, Inconclusive                             |
+| **Risk Level**                  | Choice                 | Low, Medium, High, Critical                                                    |
+| **Documents Reviewed**          | Whole Number           | Number of documents processed                                                  |
+| **Documents Missing**           | Whole Number           | Number of required documents missing                                           |
+| **Validation Findings Count**   | Whole Number           | Number of findings generated                                                   |
+| **Critical Findings Count**     | Whole Number           | Number of critical findings                                                    |
+| **AI Confidence Score**         | Decimal Number         | Overall AI confidence                                                          |
+| **Extracted Data Summary**      | Multiple Lines of Text | Consolidated summary of extracted information                                  |
+| **Validation Summary**          | Multiple Lines of Text | Consolidated validation result                                                 |
+| **Risk Summary**                | Multiple Lines of Text | Consolidated risk assessment                                                   |
+| **AI Recommendation**           | Choice                 | Approve, Approve with Conditions, Review Required, Reject, Unable to Recommend |
+| **Recommendation Summary**      | Multiple Lines of Text | Explanation of recommendation                                                  |
+| **Consolidated Output**         | Multiple Lines of Text | Complete AI-generated output                                                   |
+| **AI Model**                    | Text                   | AI model used                                                                  |
+| **Model Version**               | Text                   | Model version                                                                  |
+| **Generated On**                | Date and Time          | When output was generated                                                      |
+| **Processing Duration**         | Whole Number           | Total processing time                                                          |
+| **Output Version**              | Whole Number           | Version of this AI output                                                      |
+
+---
+
+# Why this is better
+
+Consider two applications.
+
+### Application A — Everything validates successfully
+
+```text
+Application: APP-1001
+
+Documents:
+✓ Government ID
+✓ Pay Stub
+✓ Bank Statement
+✓ Tax Document
+
+Validation:
+✓ All information consistent
+✓ No missing documents
+✓ No significant discrepancies
+
+Overall AI Assessment:
+POSITIVE
+
+Validation Result:
+PASSED
+
+Risk:
+LOW
+
+Recommendation:
+APPROVE
+```
+
+The system **still creates an AI Consolidated Output**.
+
+---
+
+### Application B — Problems are detected
+
+```text
+Application: APP-1002
+
+Documents:
+✓ Government ID
+✓ Pay Stub
+✓ Bank Statement
+✗ Tax Document missing
+
+Validation:
+⚠ Income discrepancy
+⚠ Missing required document
+
+Overall AI Assessment:
+NEGATIVE
+
+Validation Result:
+FAILED
+
+Risk:
+HIGH
+
+Recommendation:
+REVIEW REQUIRED
+```
+
+This application also gets an **AI Consolidated Output**.
+
+So:
+
+> **Positive validation → Consolidated AI Output**
+
+and
+
+> **Negative validation → Consolidated AI Output**
+
+There should never be a situation where "validation passed, therefore no consolidated output."
+
+---
+
+# One-to-many relationship
+
+I would make:
+
+**Loan Application (1) → AI Consolidated Output (Many)**
+
+Why many?
+
+Because the application could be processed again.
+
+For example:
+
+```text
+APP-1001
+   │
+   ├── AIO-1000  Initial AI processing
+   │
+   ├── AIO-1001  After missing document uploaded
+   │
+   └── AIO-1002  Final AI processing
+```
+
+This gives you a complete history of AI assessments.
+
+The latest **AI Consolidated Output** becomes the current AI assessment, while previous outputs remain available for audit.
+
+---
+
+# Revised six-table AI architecture
+
+I would now define your AI layer as:
+
+| #     | Table                      | Role                                                          |
+| ----- | -------------------------- | ------------------------------------------------------------- |
+| **1** | **AI Extraction Result**   | What AI extracted from the intake form and documents          |
+| **2** | **AI Validation Finding**  | Individual validation results, whether positive or negative   |
+| **3** | **AI Recommendation**      | Specific recommendation generated by AI                       |
+| **4** | **AI Processing Log**      | Technical audit trail of every AI processing stage            |
+| **5** | **AI Configuration**       | Controls AI models, thresholds, prompts and rules             |
+| **6** | **AI Consolidated Output** | **Final consolidated AI assessment for the loan application** |
+
+And the logical sequence becomes:
+
+```text
+                 LOAN APPLICATION
+                        │
+            ┌───────────┴───────────┐
+            │                       │
+       INTAKE FORM             DOCUMENTS
+            │                       │
+            └───────────┬───────────┘
+                        ▼
+              AI PROCESSING PIPELINE
+                        │
+                        ▼
+              AI EXTRACTION RESULT
+                        │
+                        ▼
+             AI VALIDATION FINDINGS
+                 /             \
+             POSITIVE          NEGATIVE
+                 \             /
+                  └─────┬─────┘
+                        ▼
+             AI CONSOLIDATED OUTPUT
+                        │
+                ┌───────┴───────┐
+                ▼               ▼
+        AI RECOMMENDATION   REVIEWER
+                                │
+                                ▼
+                         FINAL DECISION
+```
+
+**This is the architecture I would use for your EIPPONE Loan Application Digitalization Platform.** It preserves the distinction between **raw applicant data, extracted AI data, validation evidence, AI recommendation, and the final consolidated AI assessment**.
 
 
