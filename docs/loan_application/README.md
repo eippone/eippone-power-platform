@@ -38,6 +38,68 @@ By leveraging **Microsoft Power Platform**, organizations can improve operationa
 10. Create a scalable foundation for intelligent lending operations.
 
 
+## 4. Architecture Blueprint
+
+### End-to-End Architecture
+
+``` mermaid
+flowchart LR
+    C[Customer] --> PP[Power Pages]
+    PP --> CA[Customer Loan Application Canvas App]
+    CA --> DV[(Microsoft Dataverse)]
+
+    DV --> PA[Power Automate]
+    PA --> ACK[Customer Acknowledgement]
+    PA --> AP[Approval Workflow]
+    PA --> NOTIF[Notifications]
+
+    AP --> ER[Employee Review Model-Driven App]
+    ER --> DV
+
+    DV --> PBI[Power BI]
+    PBI --> EXEC[Executive Dashboard]
+    PBI --> OPS[Operational Analytics]
+
+    DV --> AI[AI Builder]
+    AI --> DOC[PDF / Document Extraction]
+    DOC --> SUM[Application Summary]
+    SUM --> ER
+
+    DV --> BOT[Copilot Studio / Power Virtual Agents]
+    BOT --> CQ[Customer Queries]
+    BOT --> EQ[Employee Queries]
+
+    PBI --> RAI[Executive Report Insights]
+    BOT --> RAI
+
+    DV --> ALERT[High-Value Loan Rules]
+    ALERT --> NOTIF
+```
+
+### Core Logic
+
+``` text
+Customer
+   |
+   v
+Power Pages / Customer Application
+   |
+   v
+Power Apps + Validation
+   |
+   v
+Dataverse
+   |
+   +----> Power Automate ----> Acknowledgement / Approval / Alerts
+   |
+   +----> Employee Review App
+   |
+   +----> AI Builder ----> Extraction / Summary / Recommendation
+   |
+   +----> Power BI ----> Executive & Operational Analytics
+   |
+   +----> Copilot Studio ----> Customer & Employee Conversations
+```
 
 ### System Architecture  
 
