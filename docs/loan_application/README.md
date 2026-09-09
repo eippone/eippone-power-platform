@@ -37,4 +37,109 @@ By leveraging **Microsoft Power Platform**, organizations can improve operationa
 9.  Identify high-value applications for enhanced monitoring.
 10. Create a scalable foundation for intelligent lending operations.
 
-11. 
+
+
+### System Architecture  
+
+#### Overview
+
+```text
+                         EIPPONE LOAN PLATFORM
+                                  │
+                                  ▼
+                           MICROSOFT POWER
+                              PLATFORM
+                                  │
+             ┌────────────────────┼────────────────────┐
+             │                    │                    │
+             ▼                    ▼                    ▼
+          DATAVERSE          POWER AUTOMATE       AI / DOCUMENT
+        Data & Relations      Workflows            INTELLIGENCE
+             │                    │                    │
+             └────────────────────┼────────────────────┘
+                                  │
+                                  ▼
+                           POWER PAGES
+                       Web Portal / Experience
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              ▼                   ▼                   ▼
+        CUSTOMER PORTAL     EMPLOYEE PORTAL      ANALYTICS
+              │                   │                   │
+              ▼                   ▼                   ▼
+       Canvas App #1       Canvas App #3        Power BI
+       Loan Intake         Employee Review       Reports/
+                                                  Dashboard
+              │                   │                   │
+              └───────────────────┼───────────────────┘
+                                  │
+                                  ▼
+                             DATAVERSE
+```
+
+#### Power Pages - External web experience/container  
+```text
+POWER PAGES
+│
+├── Customer Portal
+│     ├── Loan Application Intake
+│     │      └── Canvas App
+│     │
+│     └── Client Application View
+│            └── Canvas App
+│
+├── Employee Portal
+│     └── Employee Review
+│            └── Canvas App
+│
+└── Analytics
+      └── Power BI
+             ├── Executive Dashboard
+             ├── Loan Portfolio Reports
+             ├── Application Analytics
+             └── AI/OCR Quality Metrics
+
+```
+
+#### Architecture Detail
+
+```text
+                         EIPPONE LOAN PLATFORM
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                    ▼                           ▼
+              EXPERIENCE LAYER             INTELLIGENCE
+                    │                           │
+              POWER PAGES                  AI / OCR
+                    │                           │
+       ┌────────────┼────────────┐              │
+       │            │            │              │
+       ▼            ▼            ▼              ▼
+   Customer      Employee     Analytics    Document AI
+   Portal        Portal       Portal       Processing
+       │            │            │              │
+       ▼            ▼            ▼              │
+   Canvas Apps   Canvas App   Power BI          │
+       │            │            │              │
+       └────────────┴────────────┴──────────────┘
+                            │
+                            ▼
+                         DATAVERSE
+                            │
+       ┌────────────────────┼────────────────────┐
+       │                    │                    │
+       ▼                    ▼                    ▼
+  Loan Operations       AI Results          Audit/History
+       │                    │                    │
+       ▼                    ▼                    ▼
+ Applications          Extraction          Processing Log
+ Customers             Validation           Status History
+ Documents             Recommendation       Reviews
+ Approvals                                  Approvals
+                            │
+                            ▼
+                      POWER AUTOMATE
+                       Orchestration
+```
