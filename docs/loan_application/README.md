@@ -205,3 +205,128 @@ POWER PAGES
                       POWER AUTOMATE
                        Orchestration
 ```
+
+
+
+### Mermaid — Power Automate Orchestration
+
+**Power Automate as central  orchestration engine** connecting Dataverse, document processing, AI, notifications, reviews, approvals, and audit history.
+
+
+
+#### Overview
+
+For your documentation, I would actually simplify the visual slightly and make **Power Automate the central orchestration engine**:
+
+```mermaid
+flowchart LR
+
+    CUSTOMER[Customer] --> PP[Power Pages]
+    PP --> INTAKE[Loan Intake<br/>Canvas App]
+    INTAKE --> PA[Power Automate<br/>ORCHESTRATION]
+
+    PA --> DV[(Microsoft Dataverse)]
+
+    DV --> DOC[Loan Documents]
+    PA --> OCR[OCR / Document AI]
+    OCR --> EXT[AI Extraction]
+    EXT --> VAL[AI Validation]
+    VAL --> REC[AI Recommendation]
+
+    REC --> PA
+
+    PA --> REVIEW[Employee Review<br/>Canvas App]
+    REVIEW --> PA
+
+    PA --> APPROVAL[Approval /<br/>Rejection]
+    PA --> NOTIFY[Customer<br/>Notification]
+
+    PA --> HISTORY[Status History]
+    PA --> LOG[AI Processing Log]
+
+    DV --> PBI[Power BI<br/>Reports & Dashboard]
+    HISTORY --> PBI
+    LOG --> PBI
+```
+
+#### Power Automate Orchestration Detail
+
+```mermaid
+flowchart LR
+
+    A[Customer submits<br/>Loan Application] --> B[Power Automate<br/>Orchestration]
+
+    B --> C[Create / Update<br/>Loan Application]
+    B --> D[Create Customer<br/>Record]
+    B --> E[Create Loan Document<br/>Records]
+
+    E --> F[Document Processing]
+    F --> G[OCR / Document AI]
+    G --> H[AI Extraction]
+
+    H --> I[AI Extraction Result]
+    I --> J[AI Validation]
+
+    J --> K{Validation<br/>Findings?}
+
+    K -->|Yes| L[AI Validation<br/>Finding]
+    K -->|No| M[AI Recommendation]
+
+    L --> M
+
+    M --> N[AI Recommendation<br/>Record]
+
+    N --> O{Recommendation}
+
+    O -->|Manual Review| P[Create Application<br/>Review]
+    O -->|Additional Information| Q[Request Additional<br/>Information]
+    O -->|Ready for Decision| P
+
+    Q --> R[Notify Customer]
+    R --> S[Customer Provides<br/>Additional Information]
+    S --> B
+
+    P --> T[Employee Review<br/>Canvas App]
+
+    T --> U{Employee Decision}
+
+    U -->|Approve| V[Create Approval<br/>Record]
+    U -->|Reject| W[Create Rejection<br/>Record]
+    U -->|More Information| Q
+
+    V --> X[Update Application<br/>Status = Approved]
+    W --> Y[Update Application<br/>Status = Rejected]
+
+    X --> Z[Notify Customer]
+    Y --> Z
+
+    B --> AA[Application Status<br/>History]
+    F --> AB[AI Processing Log]
+    G --> AB
+    H --> AB
+    J --> AB
+    M --> AB
+    T --> AB
+    V --> AB
+    W --> AB
+
+    Z --> AC[Power BI<br/>Analytics]
+    AA --> AC
+    AB --> AC
+```
+
+
+### Where Power Automate fits
+
+The clean architectural definition is:
+
+> **Power Automate — Orchestration Layer:** Coordinates application intake, Dataverse record creation and updates, document processing, AI/OCR execution, validation, recommendations, employee review, approvals, notifications, status tracking, and audit logging.
+
+This is the version I would use in your **EIPPONE Loan Platform architecture documentation**, because it clearly separates:
+
+* **Power Pages** → user/web experience
+* **Canvas Apps** → application UI
+* **Dataverse** → system of record
+* **Power Automate** → orchestration
+* **OCR / AI** → intelligence
+* **Power BI** → analytics and reporting.
