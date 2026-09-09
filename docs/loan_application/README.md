@@ -318,7 +318,7 @@ flowchart LR
 
 ### Where Power Automate fits
 
-The clean architectural definition is:
+Architectural definition is:
 
 > **Power Automate — Orchestration Layer:** Coordinates application intake, Dataverse record creation and updates, document processing, AI/OCR execution, validation, recommendations, employee review, approvals, notifications, status tracking, and audit logging.
 
