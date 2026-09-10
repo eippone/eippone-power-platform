@@ -330,3 +330,120 @@ This is the version I would use in your **EIPPONE Loan Platform architecture doc
 * **Power Automate** → orchestration
 * **OCR / AI** → intelligence
 * **Power BI** → analytics and reporting.
+
+## Operational Dataverse model
+
+
+```text
+CUSTOMER
+   |
+   | 1:N
+   v
+LOAN APPLICATION
+   |
+   +--------------------+
+   |                    |
+   | 1:N                | 1:N
+   v                    v
+LOAN DOCUMENT       APPLICATION REVIEW
+   |
+   | 1:N
+   v
+AI EXTRACTION RESULT
+
+
+LOAN APPLICATION
+   |
+   +---- 1:N ---> APPROVAL
+   |
+   +---- 1:N ---> STATUS HISTORY
+   |
+   +---- 1:N ---> AI VALIDATION FINDING
+   |
+   +---- 1:N ---> AI RECOMMENDATION
+   |
+   +---- 1:N ---> AI PROCESSING LOG
+
+
+LOAN TYPE
+   |
+   | 1:N
+   v
+LOAN APPLICATION              
+
+```
+
+## Fabric model
+
+```text
+                         DIM_DATE
+                            |
+                            |
+                   +--------+--------+
+                   |                 |
+                   v                 v
+           FACT_LOAN_APPLICATION   FACT_APPROVAL
+                   |
+                   |
+                   v
+             DIM_CUSTOMER
+                   |
+                   |
+                   v
+              DIM_LOAN
+                   |
+                   |
+                   v
+              DIM_STATUS
+
+
+             FACT_DOCUMENT_PROCESSING
+                       |
+                       +---- DIM_DOCUMENT
+                       |
+                       +---- DIM_DATE
+                       |
+                       +---- DIM_APPLICATION
+
+
+                  FACT_AI_REVIEW
+                       |
+                       +---- DIM_APPLICATION
+                       +---- DIM_AI_MODEL
+                       +---- DIM_DATE
+
+
+              FACT_APPLICATION_STATUS
+                       |
+                       +---- DIM_STATUS
+                       +---- DIM_DATE
+                       +---- DIM_APPLICATION
+
+```
+
+## Moving the Dataverse data into Fabric
+
+We will use Fabric's Data Factory capabilities, pipelines, Dataflows Gen2, shortcuts, notebooks, or other ingestion patterns depending on the developement environment and scale.
+
+```text
+Dataverse
+    |
+    v
+Fabric ingestion
+    |
+    v
+Bronze/raw data
+    |
+    v
+Transformation
+    |
+    v
+Silver/curated data
+    |
+    v
+Gold/star schema
+    |
+    v
+Power BI semantic model
+```
+
