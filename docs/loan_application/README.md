@@ -331,6 +331,8 @@ This is the version I would use in your **EIPPONE Loan Platform architecture doc
 * **OCR / AI** → intelligence
 * **Power BI** → analytics and reporting.
 
+
+## Overall Arch
 ## Operational Dataverse model
 
 
