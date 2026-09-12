@@ -2332,3 +2332,419 @@ DIVIDE(
 |   - Branch 1: Loan Type -> Branch 2: Primary Rejection Factor (DTI, Income Unverified, High Risk) |
 +---------------------------------------------------------------------------------------------------+
 
+
+```
+
+## AI Agents Layer  
+
+To execute your proposed AI Roadmap within the **EIPPONE Loan Platform**, we will integrate Microsoft AI tools (AI Builder, Copilot Studio, Azure OpenAI / Power Platform AI Hub, and Power BI Copilot) directly into your established **Power Pages $\rightarrow$ Dataverse $\rightarrow$ Power Automate $\rightarrow$ Fabric/Power BI** infrastructure.
+
+Here is the step-by-step implementation guide across all 5 phases of your roadmap.
+
+---
+
+## Phase 1: AI Document Processing & Intake Integration
+
+**Objective:** Automatically parse attached applicant documents (Paystubs, Tax Forms, Bank Statements, Government IDs) uploaded via Power Pages and map extracted fields directly into Dataverse tables (`eipp_loandocuments`, `eipp_aiextractionresult`, and `eipp_aivalidationfinding`).
+
+```text
+Power Pages Upload -> Dataverse File Store -> Power Automate Flow -> AI Builder Model -> Dataverse Extraction Tables
+
+```
+
+### Step 1: Provision AI Builder Models
+
+1. Open **Power Apps Studio** $\rightarrow$ **AI Hub** $\rightarrow$ **AI Builder**.
+2. Select **Extract custom information from documents** (or prebuilt document models for standard IDs and Financial Receipts).
+3. Upload 5+ sample documents per document type (e.g., Paystubs, W2/T4, Bank Statements).
+4. Define target field tags: `Customer_Name`, `Employer_Name`, `Gross_Monthly_Income`, `Total_Annual_Income`, `Issue_Date`, `Tax_Year`.
+5. Train and Publish the model (name it `EIPPONE_Loan_Doc_Extractor`).
+
+### Step 2: Build the Automated Ingestion Flow (Power Automate)
+
+1. Create an Automated Cloud Flow triggered by Dataverse: **When a row is added (Table: `eipp_loandocuments`)**.
+2. Add a condition checking if `eipp_File` contains data and `eipp_AIProcessingStatus` is `Not Started`.
+3. Add the **AI Builder: Extract information from documents** action:
+* **Model:** `EIPPONE_Loan_Doc_Extractor`
+* **File Formats:** Dynamic file content from `eipp_File`.
+
+
+4. Parse the extracted JSON payload and update Dataverse records:
+* Create a row in **`eipp_aiextractionresult`** mapping `eipp_AIModel`, `eipp_ConfidenceScore`, `eipp_ExtractedData` (JSON), and `eipp_ProcessingDuration`.
+* Compare extracted income vs. `eipp_annualincome` in `eipp_customer`. If discrepancy $> 10\%$, create a row in **`eipp_aivalidationfinding`** with `Severity = High`.
+* Update **`eipp_loandocuments`**: Set `eipp_AIProcessingStatus = Completed` and `eipp_ReviewRequired = True` if `ConfidenceScore < 0.85` or if validation findings exist.
+
+
+
+---
+
+## Phase 2: Customer AI Assistant (Copilot Studio)
+
+**Objective:** Deploy an external-facing Microsoft Copilot Studio agent embedded within your **Power Pages Customer Portal** to handle application queries, doc requirements, status updates, and doc uploads.
+
+### Step 1: Create and Configure the Copilot Agent
+
+1. Open **Microsoft Copilot Studio** and create a bot named **EIPPONE Customer Virtual Assistant**.
+2. Enable **Generative Answers** by linking your organization's public loan policy URL or embedding static policy PDFs into the Copilot knowledge base (for queries like *"What documents do I need?"* or *"How long does approval take?"*).
+
+### Step 2: Build Application Status Lookup Topic
+
+1. Add a custom topic: **Check Application Status**.
+2. Add a trigger phrase set (*"Where is my application?"*, *"Status check"*, *"Is my loan approved?"*).
+3. Prompt user for authentication details or Application Reference Code (`eipp_applicationid`).
+4. Add an Action node calling a **Power Automate Flow** (`Get_Application_Status_Flow`):
+* **Flow Input:** `Application_ID`, `Applicant_Email`.
+* **Dataverse Query:** Search `eipp_loanapplication` filtering by ID.
+* **Flow Output:** `Application_Status`, `Last_Updated`, `Pending_Action`.
+
+
+5. Copilot returns a conversational response formatted dynamically based on `Application_Status`:
+> *"Your application **APP-10492** is currently **Under Review**. Our underwriting team assigned this application on Sep 10, 2026. No further documents are required at this time."*
+
+
+
+### Step 3: Embed Copilot into Power Pages
+
+1. Navigate to **Copilot Studio** $\rightarrow$ **Channels** $\rightarrow$ **Power Pages**.
+2. Copy the bot Schema Name and App ID.
+3. Open **Power Pages Design Studio** $\rightarrow$ Edit your site code $\rightarrow$ Insert the Copilot chat widget snippet into `footer.html` or the layout template.
+
+---
+
+## Phase 3: AI Decision Support & Business Rules Engine
+
+**Objective:** Combine deterministic Dataverse business rules with AI recommendations to flag high-risk applications, evaluate Debt-to-Income (DTI), detect duplicates, and automate routing.
+
+### Step 1: Implement Business Logic in Power Automate / Plug-ins
+
+Create a central evaluation pipeline triggered after Phase 1 AI extraction completes:
+
+* **Rule 1 (High-Value Exposure):** If `eipp_loanamount >= $100,000`, set `eipp_applicationstatus = Under Review`, assign priority tag `High-Priority`, and trigger a Teams notification to senior underwriters.
+* **Rule 2 (DTI Threshold Flag):**
+Calculate DTI Ratio:
+
+$$\text{DTI} = \frac{\text{Monthly Debt Obligations}}{\text{Extracted Gross Monthly Income}}$$
+
+
+
+If $\text{DTI} > 43\%$, write a record to `eipp_aivalidationfinding` (`FindingType = DTI Threshold Exceeded`, `Severity = Critical`).
+* **Rule 3 (Duplicate Applicant Detection):** Query `eipp_customer` matching on `eipp_email` OR (`eipp_firstname`, `eipp_lastname`, `eipp_address`). If match count $> 1$, tag application as `Potential Duplicate` and link existing `Customer_GUID`.
+
+### Step 2: Populate `eipp_airecommendation` Record
+
+At the end of the pipeline, write an aggregate score to **`eipp_airecommendation`**:
+
+* **`Recommendation`**: `Approve`, `Manual Review`, or `Reject`.
+* **`RiskLevel`**: `Low` (Confidence $\ge 0.90$, DTI $\le 35\%$), `Medium`, or `High`.
+* **`Reasoning`**: Multi-line summary explaining the score:
+> *"Income verified via paystub ($110,000/yr). DTI acceptable at 28%. Flagged for Manual Review solely due to loan threshold exceeding $100,000."*
+
+
+
+---
+
+## Phase 4: AI Executive Assistant (Power BI Copilot)
+
+**Objective:** Enable natural-language Q&A and automated narrative generation over your **Fabric Gold Star Schema** semantic models.
+
+### Step 1: Enable Copilot in Fabric & Power BI Service
+
+1. In your Microsoft Fabric Capacity Settings, verify that **Copilot for Fabric** is toggled ON.
+2. Ensure your Direct Lake semantic model (`wh_loan_analytics`) has standard business descriptions for all measures (`Avg Requested Amount`, `Total Originated Value`, `MoM Volume Growth %`).
+
+### Step 2: Add Copilot Visuals to Executive Dashboard Page
+
+1. Open Power BI Desktop $\rightarrow$ Edit **Page 5: Executive Portfolio Yield & Forecast**.
+2. Select the **Copilot Visual** from the Visualizations pane.
+3. Configure the visual prompt targets against your Gold Facts (`Fact_Loan_Application`, `Fact_Approval`, `Fact_AI_Consolidated_Output`).
+4. Add pre-set prompt buttons for executives:
+* *"Summarize this month's lending activity."*
+* *"Which loan type has the highest rejection rate?"*
+* *"What is the main driver behind delayed reviews?"*
+
+
+
+---
+
+## Phase 5: Internal Loan Officer Copilot
+
+**Objective:** Embed an operational AI assistant directly into the **Employee Review Model-Driven App / Canvas App** to summarize application packages, surface risk flags, and draft missing document emails.
+
+```text
+Model-Driven App Form -> Embedded Copilot Control -> Azure OpenAI / Power Automate -> Automated Actions
+
+```
+
+### Step 1: Add Custom Page Copilot to Employee Review App
+
+1. Open **Power Apps Studio** $\rightarrow$ Edit your **Employee Review Canvas / Model-Driven App**.
+2. Add a **Copilot Control** to the main record view side panel (`Application_Review_Main_Form`).
+3. Set Data Source to the active record: `BrowseGallery.Selected` or `LookUp(eipp_loanapplication, ...)`.
+
+### Step 2: Define Actions & Skills for the Employee Copilot
+
+#### 1. Summarize Application Command
+
+* **Action:** Queries `eipp_loanapplication`, `eipp_customer`, `eipp_aiextractionresult`, and `eipp_airecommendation`.
+* **Prompt:** Returns a 3-bullet executive briefing:
+* *Applicant Overview & Credit Score*
+* *Extracted Document Validation Status*
+* *AI Risk Assessment & Key Exceptions*
+
+
+
+#### 2. Draft Missing Document Email
+
+* **Action:** Triggers a Power Automate flow (`Draft_Customer_Email_Flow`).
+* **Logic:** Scans `eipp_loandocuments` where `eipp_DocumentStatus = Rejected` or `Needs Correction`.
+* **Output:** Generates a pre-populated email draft in the employee's Outlook via Graph API:
+> **Subject:** Action Required: Additional Documentation Needed for Loan Application APP-10492
+> **Body:** Dear [First Name], during our review of your loan application, we found that the uploaded Paystub was unreadable. Please log into the portal and upload a clear PDF copy...
+
+
+
+---
+
+## AI Architecture Summary Matrix
+
+| Phase | Technology Stack | Dataverse / Fabric Source Entities | Output / Target User |
+| --- | --- | --- | --- |
+| **1. Doc Extraction** | AI Builder, Power Automate | `eipp_loandocuments` | `eipp_aiextractionresult`, `eipp_aivalidationfinding` |
+| **2. Customer Assistant** | Copilot Studio, Power Pages | Knowledge Base, `eipp_loanapplication` | External Applicants |
+| **3. Decision Rules** | Power Automate, Custom Logic | `eipp_loanapplication`, `eipp_customer` | `eipp_airecommendation` |
+| **4. Executive Assistant** | Power BI Copilot, Fabric Direct Lake | `Fact_Loan_Application`, `Fact_AI_Consolidated_Output` | C-Suite Executives & Managers |
+| **5. Loan Officer Copilot** | Canvas App Copilot Control, Power Automate | All operational entities & AI tables | Underwriters & Loan Officers |
+
+
+# EIPPONE Loan Platform — Enterprise AI Implementation Roadmap & Architecture
+
+This section provides the master architectural blueprint and phase-by-phase implementation guide for embedding end-to-end artificial intelligence across the **EIPPONE Loan Platform**.
+
+---
+
+## 1. Overall System Architecture & Data Flow
+
+```mermaid
+flowchart TB
+    subgraph EXPERIENCE_LAYER["1. Experience Layer"]
+        PP_CUST["Power Pages Customer Portal\n(Intake & Tracking)"]
+        MA_EMP["Model-Driven / Canvas App\n(Employee Underwriting Hub)"]
+        PBI_EXEC["Power BI Executive Dashboard\n(Portfolio & Operational Analytics)"]
+    end
+
+    subgraph COPILOT_LAYER["2. Conversational & Agentic AI Layer"]
+        COP_CUST["Copilot Studio: Customer Assistant\n(Status, FAQ, Doc Upload Guidance)"]
+        COP_EMP["Copilot Studio: Loan Officer Copilot\n(Summaries, Risk Flags, Email Generator)"]
+        COP_PBI["Power BI Copilot / Q&A\n(Conversational Portfolio Analytics)"]
+    end
+
+    subgraph ORCHESTRATION_LAYER["3. Business Logic & Orchestration Layer"]
+        PA_FLOWS["Power Automate Central Orchestration Engine\n(State Machine, Event Triggering, SLA Routing)"]
+        AI_RULES["AI Decision & Rules Engine\n(DTI Calculations, High-Value Rules, Duplication Checks)"]
+    end
+
+    subgraph DATA_AND_INTELLIGENCE["4. Data & Document Intelligence Layer"]
+        DV[(Microsoft Dataverse\nSystem of Record)]
+        AI_BUILDER["AI Builder / Azure Document Intelligence\n(OCR, Key-Value Extraction, Parsing)"]
+    end
+
+    subgraph ANALYTICS_LAYER["5. Enterprise Analytics & Medallion Data Platform"]
+        FAB_BRONZE["Fabric Lakehouse: Bronze\n(Raw Dataverse Sync)"]
+        FAB_SILVER["Fabric Lakehouse: Silver\n(Standardized & Cleansed Delta)"]
+        FAB_GOLD["Fabric Warehouse: Gold\n(Star Schema / Direct Lake)"]
+    end
+
+    %% Customer Connections
+    PP_CUST -->|Submits Intake Form & Docs| PA_FLOWS
+    PP_CUST <--->|Interacts with| COP_CUST
+    COP_CUST <--->|Queries Application Status| PA_FLOWS
+
+    %% Employee Connections
+    MA_EMP <--->|Embedded Copilot Control| COP_EMP
+    COP_EMP <--->|Executes Contextual Actions| PA_FLOWS
+    MA_EMP <--->|Reads / Writes Decisions| DV
+
+    %% Orchestration & Data Flow
+    PA_FLOWS <--->|Persists Records| DV
+    PA_FLOWS --->|Triggers Document Analysis| AI_BUILDER
+    AI_BUILDER --->|Returns Json Data & Confidence| PA_FLOWS
+    PA_FLOWS --->|Evaluates Underwriting Rules| AI_RULES
+
+    %% Analytics Pipelines
+    DV --->|Dataverse Link / Synapse Link| FAB_BRONZE
+    FAB_BRONZE --->|PySpark Notebooks| FAB_SILVER
+    FAB_SILVER --->|Star Schema Hashing| FAB_GOLD
+    FAB_GOLD --->|Direct Lake Connection| PBI_EXEC
+    PBI_EXEC <--->|Natural Language Insights| COP_PBI
+
+```
+
+---
+
+## 2. Architectural Layer Definitions
+
+| Layer | Primary Technology | Responsibility |
+| --- | --- | --- |
+| **1. Experience Layer** | Power Pages, Power Apps Canvas & Model-Driven | Provides responsive web endpoints for external applicants and dedicated operational UI for internal underwriters. |
+| **2. Conversational AI** | Microsoft Copilot Studio, Azure OpenAI | Delivers self-service assistance to applicants and context-aware operational copilots to loan officers and executives. |
+| **3. Orchestration** | Power Automate Cloud Flows, Custom Rules | Controls end-to-end execution flow, triggers document parsing, evaluates underwriting logic, updates status records, and manages notifications. |
+| **4. Data & Document AI** | Dataverse, AI Builder / Form Recognizer | Serves as the operational system of record while parsing raw document attachments into structured schema payloads. |
+| **5. Enterprise Analytics** | Microsoft Fabric (Medallion Architecture), Power BI | Ingests operational telemetry into Lakehouse Delta tables (Bronze $\rightarrow$ Silver $\rightarrow$ Gold) for Direct Lake reporting. |
+
+---
+
+## 3. Phase-by-Phase AI Implementation Plan
+
+```mermaid
+gantt
+    title EIPPONE AI Integration Execution Timeline
+    dateFormat  YYYY-MM-DD
+    section Phase 1: Intake AI
+    AI Builder Training & Schema Setup     :p1_1, 2026-10-01, 14d
+    Power Automate Extraction Pipeline      :p1_2, after p1_1, 14d
+    section Phase 2: Customer AI
+    Copilot Studio Knowledge Base & Topics  :p2_1, 2026-10-15, 14d
+    Power Pages Widget Embedding            :p2_2, after p2_1, 7d
+    section Phase 3: Decision Support
+    Rules Engine & Risk Matrix Logic        :p3_1, 2026-11-01, 14d
+    Recommendation Score Persist Pipeline  :p3_2, after p3_1, 10d
+    section Phase 4: Exec Copilot
+    Fabric Direct Lake Optimization        :p4_1, 2026-11-15, 10d
+    Power BI Copilot Visual Configuration  :p4_2, after p4_1, 7d
+    section Phase 5: Officer Copilot
+    App Side-Panel Copilot Integration      :p5_1, 2026-12-01, 14d
+    Graph API Email & Summary Automation   :p5_2, after p5_1, 10d
+
+```
+
+### Phase 1 — Automated Document Extraction & Intake Pipeline
+
+**Goal:** Transform unformatted applicant file attachments into structured records inside Dataverse (`eipp_loandocuments`, `eipp_aiextractionresult`, `eipp_aivalidationfinding`).
+
+```mermaid
+flowchart LR
+    A[Applicant Uploads File via Power Pages] --> B[Power Automate Triggered]
+    B --> C{File Type Identified?}
+    C -->|ID / Paystub / Tax Form| D[Call AI Builder Extraction Model]
+    D --> E[Extract Fields: Name, Income, Employer, Dates]
+    E --> F[Create eipp_aiextractionresult Record]
+    F --> G{Extracted Income == Stated Income?}
+    G -->|Discrepancy > 10%| H[Create eipp_aivalidationfinding: High Severity]
+    G -->|Matched| I[Set AI Processing Status = Completed]
+    H --> I
+
+```
+
+* **Step 1: AI Model Setup:** Train an **AI Builder Document Processing Model** (`EIPPONE_Loan_Doc_Extractor`) on standard Canadian financial documents (Paystubs, T4s, Bank Statements, Government IDs). Tag key attributes: `Gross_Income`, `Employer_Name`, `Issue_Date`, `Applicant_Name`.
+* **Step 2: Automated Pipeline:** Build a Power Automate flow triggered on creation of a new `eipp_loandocuments` row. Route the underlying file stream through `EIPPONE_Loan_Doc_Extractor`.
+* **Step 3: Verification & Validation:** Store the parsed output as JSON in `eipp_aiextractionresult[eipp_ExtractedData]`. Compare extracted values against applicant self-reported values in `eipp_customer`. Automatically create an `eipp_aivalidationfinding` record for any mismatch.
+
+---
+
+### Phase 2 — Customer Copilot Deployment (Power Pages)
+
+**Goal:** Deploy a conversational assistant using Copilot Studio to reduce call-center load and enhance applicant engagement.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Applicant
+    participant Copilot as Customer Copilot
+    participant PA as Power Automate Flow
+    participant DV as Dataverse
+
+    Applicant->>Copilot: "What is the status of my application APP-10492?"
+    Copilot->>Copilot: Authenticate User Session
+    Copilot->>PA: Trigger Get_Application_Status (APP-10492)
+    PA->>DV: Query eipp_loanapplication & eipp_applicationstatushistory
+    DV-->>PA: Return Status: Under Review (Assigned: 2026-09-10)
+    PA-->>Copilot: Return Formatted Status Payload
+    Copilot-->>Applicant: "Your application is currently Under Review by our underwriting team."
+
+```
+
+* **Knowledge Base Configuration:** Load lending guidelines, required document checklists, and turnaround SLAs into Copilot Studio Generative Answers.
+* **Dynamic Action Binding:** Create custom topics linked to Power Automate flows for real-time status retrieval and additional document submission routing.
+* **Portal Embedding:** Add the Copilot web component directly into the `footer.html` layout template of the Power Pages application portal.
+
+---
+
+### Phase 3 — Hybrid Business Rules & AI Decision Engine
+
+**Goal:** Combine deterministic risk thresholds with automated machine-learning evaluation to streamline underwriter queues.
+
+```mermaid
+flowchart TD
+    A[New Application Submitted] --> B[Evaluate System Rules]
+    B --> C{Loan Amount >= $100,000?}
+    C -->|Yes| D[Tag High Priority & Escalation Queue]
+    C -->|No| E[Evaluate DTI Ratio]
+    E --> F{DTI > 43%?}
+    F -->|Yes| G[Create Finding: Critical Severity]
+    F -->|No| H[Run Duplicate Applicant Check]
+    H --> I{Existing Customer Matches?}
+    I -->|Yes| J[Link Customer GUID & Flag History]
+    I -->|No| K[Generate eipp_airecommendation Record]
+    D --> K
+    G --> K
+    J --> K
+
+```
+
+* **High-Value Exposure Gate:** Automatically route applications exceeding $\$100,000$ to senior review queues.
+* **DTI Calculation Engine:** Compute DTI as $\frac{\text{Monthly Debt}}{\text{Verified Monthly Income}}$. If the score exceeds $43\%$, log a critical finding in `eipp_aivalidationfinding`.
+* **Recommendation Summary Generation:** Compute an overall risk tier (`Low`, `Medium`, `High`) and write a narrative justification into `eipp_airecommendation[eipp_Reasoning]`.
+
+---
+
+### Phase 4 — Executive Conversational Analytics (Power BI Copilot)
+
+**Goal:** Provide C-suite leaders with natural-language interaction over the Fabric Gold Star Schema (`Fact_Loan_Application`, `Fact_Approval`, `Dim_Customer`).
+
+```mermaid
+flowchart LR
+    A[Executive Prompt: 'Summarize this month's origination yield'] --> B[Power BI Copilot Engine]
+    B --> C[Query Gold Model: Fact_Loan_Application & Fact_Approval]
+    C --> D[Execute DAX: Total Originated Value & Projected Yield]
+    D --> E[Generate Natural Language Summary & Highlight Visual]
+
+```
+
+* **Model Preparation:** Define explicit DAX measures, column descriptions, and aggregation properties inside the Fabric `wh_loan_analytics` semantic model.
+* **Visual Integration:** Embed native Power BI Copilot components on Page 5 (*Executive Portfolio Yield & Forecast*).
+* **Automated Summarization:** Enable daily executive summary generation detailing portfolio growth, SLA bottlenecks, and overall rejection factors.
+
+---
+
+### Phase 5 — Employee Underwriting Copilot
+
+**Goal:** Provide underwriters with an embedded AI assistant inside the Employee Review Application to accelerate decision velocity.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Officer as Loan Officer
+    participant App as Underwriting App UI
+    participant Copilot as Employee Copilot
+    participant Graph as Outlook / Graph API
+
+    Officer->>App: Opens Application Review Record
+    App->>Copilot: Pass Active Application Context
+    Copilot-->>Officer: Displays 3-Bullet Summary & Risk Warnings
+    Officer->>Copilot: Click "Request Missing Paystub"
+    Copilot->>Graph: Trigger Draft Email Flow via Graph API
+    Graph-->>Officer: Opens Draft Outlook Email Ready for Approval
+
+```
+
+* **Context-Aware Briefing:** Automatically summarize application parameters, credit metrics, and document extraction flags into a 3-bullet briefing visual on record load.
+* **Automated Customer Outreach:** Enable single-click generation of customer clarification emails using pre-built Power Automate flows linked to Microsoft Graph API.
+* **Underwriter Audit Trail:** Log all underwriter decisions, AI recommendations, and manual overrides into `eipp_applicationreview` for audit compliance.
+
+
+## Conclusion
+
+The **EIPPONE Loan Platform** successfully modernizes digital lending by integrating end-to-end automation, structured data governance, and enterprise AI. By orchestrating Microsoft Power Pages, Dataverse, Power Automate, and Copilot Studio alongside a Microsoft Fabric Medallion Architecture (Bronze $\rightarrow$ Silver $\rightarrow$ Gold), the platform transforms complex, manual underwriting into a streamlined, data-driven operation.
+
+This architecture significantly reduces processing times, improves straight-through processing rates, minimizes manual data-entry errors, and provides real-time portfolio visibility for executives and underwriters alike. The result is an agile, scalable enterprise foundation engineered to deliver faster loan decisions, maintain rigorous risk governance, and elevate the lending experience for customers and employees.
+
