@@ -1898,39 +1898,100 @@ print("--- All Gold Medallion Transformations Completed Successfully ---")
 
 Here are the complete **DAX measure formulas** and **layout mockups** for all ** suggested report pages** to complete the  Loan Analytics suite.
 
+Here is your step-by-step implementation guide to construct the 5-page **Loan Analytics Suite** in Power BI.
+
+
+### Step 1: Connect Power BI to Fabric (Direct Lake / DirectQuery)
+
+1. Open **Power BI Desktop**.
+2. Select **Get Data** $\rightarrow$ **Microsoft Fabric** $\rightarrow$ **Fabric Lakehouses** (or **Fabric Data Warehouses**).
+3. Select your `wh_loan_analytics` Warehouse or `lh_loan_platform` SQL Analytics Endpoint.
+4. Select all **Fact** and **Dimension** tables (e.g., `Fact_Loan_Application`, `Dim_Customer`, `Dim_Date`, `Fact_AI_Recommendation`, `Fact_AI_Validation_Finding`, `Fact_AI_Extraction_Result`, `Fact_Application_Review`, `Fact_Approval`, `Dim_Loan_Document`).
+5. Choose **Direct Lake** mode (or DirectQuery) to maintain real-time synchronization with Lakehouse Delta updates.
+
 ---
 
-# Page 1: Credit Risk & Applicant Profile
+### Step 2: Establish Semantic Model Relationships
 
-### DAX Measures
+Navigate to the **Model View** and verify/create the following active $1:N$ relationships (Single direction, Dimension filter to Fact):
+
+* `Dim_Customer[Customer_SK]` $\rightarrow$ `Fact_Loan_Application[Customer_SK]`
+* `Dim_Loan_Type[Loan_Type_SK]` $\rightarrow$ `Fact_Loan_Application[Loan_Type_SK]`
+* `Dim_Date[Date_Key]` $\rightarrow$ `Fact_Loan_Application[Application_Date_Key]`
+* `Fact_Loan_Application[Application_SK]` $\rightarrow$ `Fact_AI_Extraction_Result[Application_SK]`
+* `Fact_Loan_Application[Application_SK]` $\rightarrow$ `Fact_AI_Validation_Finding[Application_SK]`
+* `Fact_Loan_Application[Application_SK]` $\rightarrow$ `Fact_AI_Recommendation[Application_SK]`
+* `Fact_Loan_Application[Application_SK]` $\rightarrow$ `Fact_Application_Review[Application_SK]`
+* `Fact_Loan_Application[Application_SK]` $\rightarrow$ `Fact_Approval[Application_SK]`
+* `Dim_Loan_Document[Document_SK]` $\rightarrow$ `Fact_AI_Extraction_Result[Document_SK]`
+
+---
+
+### Step 3: Page-by-Page Implementation Guide
+
+#### Page 1: Credit Risk & Applicant Profile
+
+**1. Create Calculated Column in `Dim_Customer`:**
 
 ```dax
-// 1. Average Requested Loan Amount
-Avg Requested Amount = 
-AVERAGE(cr_application[Amount])
-
-// 2. Average Stated Income
-Avg Stated Income = 
-AVERAGE(cr_application[StatedIncome])
-
-// 3. Debt-to-Income (DTI) Ratio %
-Avg Debt to Income Ratio = 
-AVERAGEX(
-    FILTER(cr_application, NOT(ISBLANK(cr_application[StatedIncome])) && cr_application[StatedIncome] > 0),
-    DIVIDE(cr_application[MonthlyDebt], cr_application[StatedIncome] / 12, 0)
-)
-
-// 4. Income Tier Category (Calculated Column)
 Income Tier = 
 SWITCH(
     TRUE(),
-    cr_application[StatedIncome] < 50000, "< $50k",
-    cr_application[StatedIncome] <= 100000, "$50k - $100k",
-    cr_application[StatedIncome] <= 150000, "$100k - $150k",
+    Dim_Customer[Annual_Income] < 50000, "< $50k",
+    Dim_Customer[Annual_Income] <= 100000, "$50k - $100k",
+    Dim_Customer[Annual_Income] <= 150000, "$100k - $150k",
     "> $150k"
 )
 
 ```
+
+**2. Create DAX Measures:**
+
+```dax
+Avg Requested Amount = AVERAGE(Fact_Loan_Application[Loan_Amount])
+
+Avg Stated Income = AVERAGE(Fact_Loan_Application[Annual_Income])
+
+Avg Debt to Income Ratio = 
+AVERAGEX(
+    FILTER(Fact_Loan_Application, NOT(ISBLANK(Fact_Loan_Application[Annual_Income])) && Fact_Loan_Application[Annual_Income] > 0),
+    DIVIDE(Fact_Loan_Application[Loan_Amount] * 0.05, Fact_Loan_Application[Annual_Income] / 12, 0)
+)
+
+Avg Credit Score = AVERAGE(Fact_Loan_Application[Credit_Score])
+
+Application Count = COUNT(Fact_Loan_Application[Application_SK])
+
+Approval Rate % = 
+DIVIDE(
+    CALCULATE(COUNT(Fact_Loan_Application[Application_SK]), Fact_Loan_Application[Application_Status] = "Approved"),
+    COUNT(Fact_Loan_Application[Application_SK]),
+    0
+)
+
+```
+
+**3. Visual Setup:**
+
+* **Top KPIs:** Place 4 **Card Visuals** displaying `[Avg Requested Amount]`, `[Avg Stated Income]`, `[Avg Debt to Income Ratio]` (Format: %), and `[Avg Credit Score]`.
+* **Middle Left:** Add a **Line and Clustered Column Chart**.
+* **Shared Axis:** `Dim_Customer[Income Tier]`
+* **Column Values:** `[Application Count]`
+* **Line Values:** `[Approval Rate %]`
+
+
+* **Middle Right:** Add a **Donut Chart**.
+* **Legend:** `Dim_Customer[Employment_Status]`
+* **Values:** `[Application Count]`
+
+
+* **Bottom:** Add a **Scatter Plot**.
+* **X-Axis:** `Fact_Loan_Application[Annual_Income]`
+* **Y-Axis:** `Fact_Loan_Application[Loan_Amount]`
+* **Size:** `[Approval Rate %]`
+* **Legend:** `Fact_Loan_Application[Application_Status]`
+
+
 
 ### Layout Mockup
 
@@ -1952,57 +2013,83 @@ SWITCH(
 
 ---
 
-# Page 2: Operational Bottlenecks & Review Velocity
+#### Page 2: Operational Bottlenecks & Review Velocity
 
-### DAX Measures
+**1. Create Calculated Column in `Fact_Loan_Application`:**
 
 ```dax
-// 1. Average Time to Decision (Days)
-Avg Decision Time (Days) = 
-AVERAGEX(
-    FILTER(cr_application, NOT(ISBLANK(cr_application[DecisionDate]))),
-    DATEDIFF(cr_application[SubmissionDate], cr_application[DecisionDate], DAY)
-)
-
-// 2. Under Review Backlog Count
-Under Review Backlog = 
-CALCULATE(
-    COUNT(cr_application[ApplicationID]),
-    cr_application[Status] = "Under Review"
-)
-
-// 3. SLA Compliance % (Threshold: <= 5 Days)
-SLA Compliance % = 
-DIVIDE(
-    CALCULATE(
-        COUNT(cr_application[ApplicationID]),
-        FILTER(
-            cr_application,
-            NOT(ISBLANK(cr_application[DecisionDate])) &&
-            DATEDIFF(cr_application[SubmissionDate], cr_application[DecisionDate], DAY) <= 5
-        )
-    ),
-    CALCULATE(
-        COUNT(cr_application[ApplicationID]),
-        NOT(ISBLANK(cr_application[DecisionDate]))
-    ),
-    0
-)
-
-// 4. Application Age Bucket (Calculated Column)
 Application Age Group = 
-VAR DaysPending = DATEDIFF(cr_application[SubmissionDate], TODAY(), DAY)
+VAR DaysPending = DATEDIFF(Fact_Loan_Application[Application_Date_Key], TODAY(), DAY)
 RETURN
 SWITCH(
     TRUE(),
-    ISBLANK(cr_application[DecisionDate]) && DaysPending <= 3, "0 - 3 Days",
-    ISBLANK(cr_application[DecisionDate]) && DaysPending <= 7, "4 - 7 Days",
-    ISBLANK(cr_application[DecisionDate]) && DaysPending <= 14, "8 - 14 Days",
-    ISBLANK(cr_application[DecisionDate]), "15+ Days (Overdue)",
+    ISBLANK(Fact_Loan_Application[Application_Status]) || Fact_Loan_Application[Application_Status] = "Under Review",
+        SWITCH(
+            TRUE(),
+            DaysPending <= 3, "0 - 3 Days",
+            DaysPending <= 7, "4 - 7 Days",
+            DaysPending <= 14, "8 - 14 Days",
+            "15+ Days (Overdue)"
+        ),
     "Decisioned"
 )
 
 ```
+
+**2. Create DAX Measures:**
+
+```dax
+Avg Decision Time (Days) = 
+AVERAGEX(
+    FILTER(Fact_Application_Review, NOT(ISBLANK(Fact_Application_Review[Review_Completed_Date]))),
+    DATEDIFF(Fact_Application_Review[Review_Start_Date], Fact_Application_Review[Review_Completed_Date], DAY)
+)
+
+Under Review Backlog = 
+CALCULATE(
+    COUNT(Fact_Loan_Application[Application_SK]),
+    Fact_Loan_Application[Application_Status] = "Under Review"
+)
+
+SLA Compliance % = 
+DIVIDE(
+    CALCULATE(
+        COUNT(Fact_Application_Review[Review_SK]),
+        NOT(ISBLANK(Fact_Application_Review[Review_Completed_Date])) &&
+        DATEDIFF(Fact_Application_Review[Review_Start_Date], Fact_Application_Review[Review_Completed_Date], DAY) <= 5
+    ),
+    CALCULATE(COUNT(Fact_Application_Review[Review_SK]), NOT(ISBLANK(Fact_Application_Review[Review_Completed_Date]))),
+    0
+)
+
+Overdue Applications Count = 
+CALCULATE(
+    COUNT(Fact_Loan_Application[Application_SK]),
+    Fact_Loan_Application[Application Age Group] = "15+ Days (Overdue)"
+)
+
+```
+
+**3. Visual Setup:**
+
+* **Top KPIs:** 4 **Card Visuals** for `[Avg Decision Time (Days)]`, `[SLA Compliance %]`, `[Under Review Backlog]`, and `[Overdue Applications Count]`.
+* **Middle Left:** **Funnel Visual**.
+* **Category:** `Fact_AI_Processing_Log[Processing_Stage]`
+* **Values:** `AVERAGE(Fact_AI_Processing_Log[Processing_Duration_MS])`
+
+
+* **Middle Right:** **Stacked Bar Chart**.
+* **Y-Axis:** `Fact_Application_Review[Reviewer_User_ID]`
+* **X-Axis:** `[Application Count]`
+* **Legend:** `Fact_Application_Review[Review_Status]`
+
+
+* **Bottom:** **Matrix Table**.
+* **Rows:** `Dim_Loan_Type[Loan_Type_Code]`
+* **Columns:** `Fact_Loan_Application[Application Age Group]`
+* **Values:** `[Application Count]`, `SUM(Fact_Loan_Application[Loan_Amount])`
+
+
 
 ### Layout Mockup
 
@@ -2025,45 +2112,60 @@ SWITCH(
 
 ---
 
-# Page 3: High-Value Loan & Concentration Portfolio
+#### Page 3: High-Value Loan & Concentration Portfolio
 
-### DAX Measures
+**1. Create DAX Measures:**
 
 ```dax
-// Dynamic Dynamic High-Value Threshold (Uses Configuration Table or Parameter)
-High Value Threshold = 150000 
+High Value Threshold = 150000
 
-// 1. High-Value Application Count
 High Value App Count = 
 CALCULATE(
-    COUNT(cr_application[ApplicationID]),
-    cr_application[Amount] >= [High Value Threshold]
+    COUNT(Fact_Loan_Application[Application_SK]),
+    Fact_Loan_Application[Loan_Amount] >= [High Value Threshold]
 )
 
-// 2. Total High-Value Exposure ($)
 High Value Total Exposure = 
 CALCULATE(
-    SUM(cr_application[Amount]),
-    cr_application[Amount] >= [High Value Threshold]
+    SUM(Fact_Loan_Application[Loan_Amount]),
+    Fact_Loan_Application[Loan_Amount] >= [High Value Threshold]
 )
 
-// 3. Pending High-Value Exposure ($)
 High Value Pending Exposure = 
 CALCULATE(
-    SUM(cr_application[Amount]),
-    cr_application[Amount] >= [High Value Threshold],
-    cr_application[Status] = "Under Review"
+    SUM(Fact_Loan_Application[Loan_Amount]),
+    Fact_Loan_Application[Loan_Amount] >= [High Value Threshold],
+    Fact_Loan_Application[Application_Status] = "Under Review"
 )
 
-// 4. High-Value Approval Rate %
 High Value Approval Rate % = 
 DIVIDE(
-    CALCULATE(COUNT(cr_application[ApplicationID]), cr_application[Amount] >= [High Value Threshold], cr_application[Status] = "Approved"),
-    CALCULATE(COUNT(cr_application[ApplicationID]), cr_application[Amount] >= [High Value Threshold], cr_application[Status] IN {"Approved", "Rejected"}),
+    CALCULATE(COUNT(Fact_Loan_Application[Application_SK]), Fact_Loan_Application[Loan_Amount] >= [High Value Threshold], Fact_Loan_Application[Application_Status] = "Approved"),
+    CALCULATE(COUNT(Fact_Loan_Application[Application_SK]), Fact_Loan_Application[Loan_Amount] >= [High Value Threshold], Fact_Loan_Application[Application_Status] IN {"Approved", "Rejected"}),
     0
 )
 
 ```
+
+**2. Visual Setup:**
+
+* **Top KPIs:** 4 **Card Visuals** for `[High Value Total Exposure]`, `[High Value Pending Exposure]`, `[High Value App Count]`, and `[High Value Approval Rate %]`.
+* **Middle Left:** **Treemap Visual**.
+* **Group:** `Dim_Loan_Type[Description]`
+* **Values:** `[High Value Total Exposure]`
+* **Details:** `Fact_Loan_Application[Application_Status]`
+
+
+* **Middle Right:** **Line Chart**.
+* **X-Axis:** `Dim_Date[Month_Name]` (Sorted by `Month`)
+* **Y-Axis:** `CALCULATE([High Value Total Exposure], Fact_Loan_Application[Application_Status] = "Approved")` and `CALCULATE([High Value Total Exposure], Fact_Loan_Application[Application_Status] = "Rejected")`
+
+
+* **Bottom:** **Table Visual**.
+* **Columns:** `Fact_Loan_Application[Application_ID]`, `Dim_Customer[Full_Name]`, `Fact_Loan_Application[Loan_Amount]`, `Dim_Customer[Annual_Income]`, `Fact_AI_Recommendation[Confidence_Score]`, `Fact_Loan_Application[Approver_Name]`
+* **Filter:** Set visual filter to `Fact_Loan_Application[Loan_Amount] >= 150000` and `Application_Status = "Under Review"`.
+
+
 
 ### Layout Mockup
 
@@ -2086,35 +2188,54 @@ DIVIDE(
 
 ---
 
-# Page 4: AI Extraction & Governance
+#### Page 4: AI Extraction & Governance
 
-### DAX Measures
+**1. Create DAX Measures:**
 
 ```dax
-// 1. Average OCR Confidence Score %
-Avg Extraction Confidence = 
-AVERAGE(cr_loandocument[ConfidenceScore])
+Avg Extraction Confidence = AVERAGE(Fact_AI_Extraction_Result[Confidence_Score])
 
-// 2. Straight-Through Processing (STP) Rate % (Processed without manual override)
 STP Rate % = 
 DIVIDE(
     CALCULATE(
-        COUNT(cr_loandocument[DocumentID]),
-        cr_loandocument[ExtractionStatus] = "Processed",
-        cr_loandocument[ConfidenceScore] >= 0.85
+        COUNT(Fact_AI_Extraction_Result[Extraction_SK]),
+        Fact_AI_Extraction_Result[Extraction_Status] = "Success",
+        Fact_AI_Extraction_Result[Confidence_Score] >= 0.85
     ),
-    COUNT(cr_loandocument[DocumentID]),
+    COUNT(Fact_AI_Extraction_Result[Extraction_SK]),
     0
 )
 
-// 3. Missing / Failed Document Count
 Failed Document Verification Count = 
 CALCULATE(
-    COUNT(cr_loandocument[DocumentID]),
-    cr_loandocument[ExtractionStatus] IN {"Failed", "Requires Manual Review"}
+    COUNT(Fact_AI_Extraction_Result[Extraction_SK]),
+    Fact_AI_Extraction_Result[Extraction_Status] IN {"Failed", "Requires Manual Review"}
 )
 
+Total Processed Documents = COUNT(Fact_AI_Extraction_Result[Extraction_SK])
+
 ```
+
+**2. Visual Setup:**
+
+* **Top KPIs:** 4 **Card Visuals** for `[Avg Extraction Confidence]`, `[STP Rate %]`, `[Failed Document Verification Count]`, and `[Total Processed Documents]`.
+* **Middle Left:** **Clustered Column Chart**.
+* **X-Axis:** `Dim_Loan_Document[Document_Type]`
+* **Y-Axis:** `[Avg Extraction Confidence]`
+* **Analytics Line:** Add a **Constant Line** on Y-Axis at `0.85` (Target Threshold).
+
+
+* **Middle Right:** **Donut Chart**.
+* **Legend:** `Fact_AI_Validation_Finding[Finding_Type]`
+* **Values:** `COUNT(Fact_AI_Validation_Finding[Finding_SK])`
+
+
+* **Bottom:** **Matrix / Cross-Tab Visual** (Human vs. AI Alignment Matrix).
+* **Rows:** `Fact_AI_Recommendation[Recommendation]`
+* **Columns:** `Fact_AI_Recommendation[Reviewer_Decision]`
+* **Values:** `COUNT(Fact_AI_Recommendation[Recommendation_SK])`
+
+
 
 ### Layout Mockup
 
@@ -2139,37 +2260,59 @@ CALCULATE(
 
 ---
 
-# Page 5: Executive Portfolio Yield & Forecast
+#### Page 5: Executive Portfolio Yield & Forecast
 
-### DAX Measures
+**1. Create DAX Measures:**
 
 ```dax
-// 1. Total Originated Portfolio Value ($)
 Total Originated Value = 
 CALCULATE(
-    SUM(cr_application[Amount]),
-    cr_application[Status] = "Approved"
+    SUM(Fact_Loan_Application[Loan_Amount]),
+    Fact_Loan_Application[Application_Status] = "Approved"
 )
 
-// 2. Projected Annual Interest Yield ($)
 Projected Interest Yield = 
 SUMX(
-    FILTER(cr_application, cr_application[Status] = "Approved"),
-    cr_application[Amount] * cr_application[InterestRate]
+    FILTER(Fact_Loan_Application, Fact_Loan_Application[Application_Status] = "Approved"),
+    Fact_Loan_Application[Loan_Amount] * Fact_Loan_Application[Interest_Rate]
 )
 
-// 3. Month-over-Month Growth %
 MoM Volume Growth % = 
-VAR CurrentMonth = [Total Applications]
+VAR CurrentMonth = [Total Originated Value]
 VAR PriorMonth = 
     CALCULATE(
-        [Total Applications],
-        DATEADD('Calendar'[Date], -1, MONTH)
+        [Total Originated Value],
+        DATEADD('Dim_Date'[Date_Key], -1, MONTH)
     )
 RETURN
 DIVIDE(CurrentMonth - PriorMonth, PriorMonth, 0)
 
+Rejection Rate % = 
+DIVIDE(
+    CALCULATE(COUNT(Fact_Loan_Application[Application_SK]), Fact_Loan_Application[Application_Status] = "Rejected"),
+    COUNT(Fact_Loan_Application[Application_SK]),
+    0
+)
+
 ```
+
+**2. Visual Setup:**
+
+* **Top KPIs:** 4 **Card Visuals** for `[Total Originated Value]`, `[Projected Interest Yield]`, `[MoM Volume Growth %]`, and `[Rejection Rate %]`.
+* **Middle Left:** **Line and Clustered Column Chart**.
+* **Shared Axis:** `Dim_Date[Year]` / `Dim_Date[Month_Name]`
+* **Column Values:** `[Total Originated Value]`
+* **Line Values:** Create a target forecast measure or use Power BI **Analytics -> Forecast** line.
+
+
+* **Middle Right:** **Waterfall Chart**.
+* **Category:** `Dim_Loan_Type[Description]`
+* **Y-Axis:** `[Projected Interest Yield]`
+
+
+* **Bottom:** **Decomposition Tree Visual**.
+* **Analyze:** `CALCULATE(COUNT(Fact_Loan_Application[Application_SK]), Fact_Loan_Application[Application_Status] = "Rejected")`
+* **Explain By:** `Dim_Loan_Type[Description]`, `Fact_AI_Validation_Finding[Finding_Type]`, `Fact_AI_Recommendation[Risk_Level]`
 
 ### Layout Mockup
 
@@ -2189,4 +2332,3 @@ DIVIDE(CurrentMonth - PriorMonth, PriorMonth, 0)
 |   - Branch 1: Loan Type -> Branch 2: Primary Rejection Factor (DTI, Income Unverified, High Risk) |
 +---------------------------------------------------------------------------------------------------+
 
-```
