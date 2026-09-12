@@ -333,7 +333,7 @@ This is the version I would use in your **EIPPONE Loan Platform architecture doc
 
 
 ## Choices Structure
-
+```text
 Choices
 │
 ├── Document Type
@@ -408,6 +408,7 @@ Choices
     ├── Medium
     ├── High
     └── Critical
+```
     
 ## Operational Dataverse model
 
